@@ -44,31 +44,26 @@ async def fetch(endpoint: str, params: dict[str, Any]) -> dict[str, Any]:
             response.raise_for_status()
             data = response.json()
 
-        if response.status_code == 200 and data.get("status") == "success":
-            return {'status':'success', 'data': data}
-        
-        if response.status_code == 422:
-            return {'status':'error', 'message': "Invalid parameters provided. Please check your request."}
-        
-        elif response.status_code == 429:
-            return {'status':'error', 'message': "Rate limit exceeded. Try again later."}
+        if data.get("status") == "success":
+            return {'status': 'success', 'data': data}
 
-        elif response.status_code == 401:
-            return {'status':'error', 'message': "Unauthorized. API key is invalid."}
-        
-        else:
-            return {'status':'error', 'message': f"Something went wrong. Error details: {response.text}"}
-        
-            
+        return {'status': 'error', 'message': f"Something went wrong. Error details: {response.text}"}
+
     except httpx.TimeoutException:
-        return {'status':'error', 'message': f"Request timed out after {REQUEST_TIMEOUT} seconds. The Newsdata.io API may be experiencing delays."}
+        return {'status': 'error', 'message': f"Request timed out after {REQUEST_TIMEOUT} seconds. The Newsdata.io API may be experiencing delays."}
     except httpx.ConnectError:
-        return {'status':'error', 'message': "Failed to connect to Newsdata.io API. Please check your internet connection."}
+        return {'status': 'error', 'message': "Failed to connect to Newsdata.io API. Please check your internet connection."}
     except httpx.HTTPStatusError as e:
-        return {'status':'error', 'message': f"HTTP error occurred with Newsdata.io API: {str(e)} - Response: {e.response.text}"}
+        code = e.response.status_code
+        if code == 401:
+            return {'status': 'error', 'message': "Unauthorized. API key is invalid."}
+        elif code == 422:
+            return {'status': 'error', 'message': "Invalid parameters provided. Please check your request."}
+        elif code == 429:
+            return {'status': 'error', 'message': "Rate limit exceeded. Try again later."}
+        return {'status': 'error', 'message': f"HTTP error occurred with Newsdata.io API: {str(e)} - Response: {e.response.text}"}
     except Exception as e:
-        return {'status':'error', 'message': f"Unexpected error occurred with Newsdata.io API: {str(e)}"}
-
+        return {'status': 'error', 'message': f"Unexpected error occurred with Newsdata.io API: {str(e)}"}
 
 
 def _format_sentiment_stats(value: Any) -> Optional[str]:
@@ -76,9 +71,9 @@ def _format_sentiment_stats(value: Any) -> Optional[str]:
         return None
 
     sentiment_stats = []
-    for key, value in value.items():
-        sentiment_stats.append(f"{key}={value}")
-    
+    for key, val in value.items():
+        sentiment_stats.append(f"{key}={val}")
+
     return ", ".join(sentiment_stats)
 
 
@@ -128,12 +123,11 @@ def _format_article_item(article: dict[str, Any]) -> list[str]:
     _append_field(lines, "video_url", article.get("video_url"))
     _append_field(lines, "duplicate", article.get("duplicate"))
     _append_field(lines, "summary", article.get("summary"))
-    
+
     return lines
 
 
 def _format_articles(data: dict[str, Any], endpoint_name: str) -> str:
-      
     if data.get("status") != 'success':
         return f"Error: {data.get('message', 'Unknown error')}"
 
@@ -141,10 +135,10 @@ def _format_articles(data: dict[str, Any], endpoint_name: str) -> str:
     articles = data.get("results") or []
     if not articles:
         return f"No {endpoint_name} articles found matching your query."
-    
+
     total = data.get("totalResults", len(articles))
     next_page = data.get("nextPage")
-    
+
     lines = [
         f"endpoint: {endpoint_name}",
         f"total_results: {total}",
@@ -205,7 +199,7 @@ async def get_latest_news(
     language: Optional[LANGUAGE_FILTER] = None,
     exclude_language: Optional[LANGUAGE_FILTER] = None,
     domain: Optional[DOMAIN_FILTER] = None,
-    domainurl: Optional[DOMAIN_URL_FILTER] = None,
+    domain_url: Optional[DOMAIN_URL_FILTER] = None,
     exclude_domain: Optional[DOMAIN_FILTER] = None,
     timeframe: Optional[TIMEFRAME] = None,
     size: Optional[SIZE] = None,
@@ -218,8 +212,8 @@ async def get_latest_news(
     tag: Optional[TAG_FILTER] = None,
     sentiment: Optional[SENTIMENT] = None,
     region: Optional[REGION_FILTER] = None,
-    excludefield: Optional[EXCLUDE_FIELD_FILTER] = None,
-    removeduplicate: Optional[REMOVE_DUPLICATE] = None,
+    exclude_field: Optional[EXCLUDE_FIELD_FILTER] = None,
+    remove_duplicate: Optional[REMOVE_DUPLICATE] = None,
     article_id: Optional[ARTICLE_IDS] = None,
     organization: Optional[ORGANIZATION_FILTER] = None,
     url: Optional[URL] = None,
@@ -241,8 +235,20 @@ async def get_latest_news(
     - `region` filters by city-country pairs (e.g. "delhi-india").
     - `organization` filters by company/org name mentions in articles.
 
+    Boolean query syntax (AND, OR, NOT only — no other operators):
+    - AND  → both terms must appear:       `AI AND regulation`
+    - OR   → either term matches:          `earthquake OR tsunami`
+    - NOT  → exclude a term:               `apple NOT fruit`
+    - ""   → exact phrase match:           `"interest rate"`
+    - ()   → group terms:                  `(apple OR google) AND earnings`
+    - Combine freely:                      `("climate change" OR "global warming") AND policy NOT opinion`
+
     Examples:
     - `q="(bitcoin OR ethereum) AND regulation", country="us", language="en", size=10`
+    - `q="(OpenAI OR Anthropic OR Google) AND (AI OR LLM) AND regulation", language="en", timeframe="24"`
+    - `q='"interest rate" AND (Fed OR "Federal Reserve") NOT rumor', country="us", priority_domain="top"`
+    - `q_in_title="(inflation OR recession) AND (Fed OR "Federal Reserve") NOT forecast", language="en"`
+    - `q="(merger OR acquisition OR takeover) NOT (denied OR failed OR blocked)", sort="relevancy"`
     - `category="technology", priority_domain="top", sort="relevancy"`
     - `q="apple earnings", organization="apple", timeframe="24"`
     - `category="sports", country="in", language="hi"`
@@ -260,7 +266,7 @@ async def get_latest_news(
             "language": language,
             "excludelanguage": exclude_language,
             "domain": domain,
-            "domainurl": domainurl,
+            "domainurl": domain_url,
             "excludedomain": exclude_domain,
             "timeframe": timeframe,
             "size": size,
@@ -273,8 +279,8 @@ async def get_latest_news(
             "tag": tag,
             "sentiment": sentiment,
             "region": region,
-            "excludefield": excludefield,
-            "removeduplicate": removeduplicate,
+            "excludefield": exclude_field,
+            "removeduplicate": remove_duplicate,
             "id": article_id,
             "organization": organization,
             "url": url,
@@ -296,7 +302,7 @@ async def get_archive_news(
     language: Optional[LANGUAGE_FILTER] = None,
     exclude_language: Optional[LANGUAGE_FILTER] = None,
     domain: Optional[DOMAIN_FILTER] = None,
-    domainurl: Optional[DOMAIN_URL_FILTER] = None,
+    domain_url: Optional[DOMAIN_URL_FILTER] = None,
     exclude_domain: Optional[DOMAIN_FILTER] = None,
     size: Optional[SIZE] = None,
     timezone: Optional[TIMEZONE] = None,
@@ -307,11 +313,11 @@ async def get_archive_news(
     page: Optional[PAGE] = None,
     from_date: Optional[DATE_OR_DATETIME] = None,
     to_date: Optional[DATE_OR_DATETIME] = None,
-    excludefield: Optional[EXCLUDE_FIELD_FILTER] = None,
+    exclude_field: Optional[EXCLUDE_FIELD_FILTER] = None,
     article_id: Optional[ARTICLE_IDS] = None,
     url: Optional[URL] = None,
     sort: Optional[SORT] = None,
-    removeduplicate: Optional[REMOVE_DUPLICATE] = None,
+    remove_duplicate: Optional[REMOVE_DUPLICATE] = None,
 ) -> str:
     """
     Use this tool to search HISTORICAL news articles older than 48 hours.
@@ -325,8 +331,19 @@ async def get_archive_news(
     - Do NOT combine include/exclude for the same field.
     - `article_id` or `url` can fetch a single specific historical article.
 
+    Boolean query syntax (AND, OR, NOT only — no other operators):
+    - AND  → both terms must appear:       `AI AND regulation`
+    - OR   → either term matches:          `earthquake OR tsunami`
+    - NOT  → exclude a term:               `apple NOT fruit`
+    - ""   → exact phrase match:           `"interest rate"`
+    - ()   → group terms:                  `(apple OR google) AND earnings`
+    - Combine freely:                      `("rate hike" OR "rate cut") AND Fed NOT rumor`
+
     Examples:
-    - `q="(ukraine war) AND (russia OR putin)", from_date="2024-01-01", to_date="2024-01-31", language="en"`
+    - `q="(ukraine AND war) AND (russia OR putin) NOT propaganda", from_date="2024-01-01", to_date="2024-01-31", language="en"`
+    - `q='"interest rate" AND (Fed OR "Federal Reserve") AND (hike OR cut OR pause) NOT forecast', from_date="2024-01-01", to_date="2024-06-30"`
+    - `q="(Tesla OR TSLA) AND (recall OR lawsuit OR accident) NOT earnings", from_date="2023-01-01", to_date="2023-12-31"`
+    - `q_in_title="(election OR vote OR ballot) AND (fraud OR controversy) NOT satire", country="us", from_date="2024-11-01", to_date="2024-11-30"`
     - `category="politics", country="us", from_date="2024-11-01", to_date="2024-11-30"`
     - `q="IPO", from_date="2025-01-01 00:00:00", sort="relevancy"`
     """
@@ -343,7 +360,7 @@ async def get_archive_news(
             "language": language,
             "excludelanguage": exclude_language,
             "domain": domain,
-            "domainurl": domainurl,
+            "domainurl": domain_url,
             "excludedomain": exclude_domain,
             "size": size,
             "timezone": timezone,
@@ -354,11 +371,11 @@ async def get_archive_news(
             "page": page,
             "from_date": from_date,
             "to_date": to_date,
-            "excludefield": excludefield,
+            "excludefield": exclude_field,
             "id": article_id,
             "url": url,
             "sort": sort,
-            "removeduplicate": removeduplicate,
+            "removeduplicate": remove_duplicate,
         },
     )
     return _format_articles(data, "archive")
@@ -372,7 +389,7 @@ async def get_crypto_news(
     language: Optional[LANGUAGE_FILTER] = None,
     exclude_language: Optional[LANGUAGE_FILTER] = None,
     domain: Optional[DOMAIN_FILTER] = None,
-    domainurl: Optional[DOMAIN_URL_FILTER] = None,
+    domain_url: Optional[DOMAIN_URL_FILTER] = None,
     exclude_domain: Optional[DOMAIN_FILTER] = None,
     timeframe: Optional[TIMEFRAME] = None,
     size: Optional[SIZE] = None,
@@ -385,10 +402,10 @@ async def get_crypto_news(
     tag: Optional[TAG_FILTER] = None,
     sentiment: Optional[SENTIMENT] = None,
     coin: Optional[COIN_FILTER] = None,
-    excludefield: Optional[EXCLUDE_FIELD_FILTER] = None,
+    exclude_field: Optional[EXCLUDE_FIELD_FILTER] = None,
     from_date: Optional[DATE_OR_DATETIME] = None,
     to_date: Optional[DATE_OR_DATETIME] = None,
-    removeduplicate: Optional[REMOVE_DUPLICATE] = None,
+    remove_duplicate: Optional[REMOVE_DUPLICATE] = None,
     article_id: Optional[ARTICLE_IDS] = None,
     url: Optional[URL] = None,
     sort: Optional[SORT] = None,
@@ -407,9 +424,20 @@ async def get_crypto_news(
     - Use `timeframe` OR `from_date`/`to_date`, not both.
     - `sentiment` is useful here: `positive` for bullish news, `negative` for bearish.
 
+    Boolean query syntax (AND, OR, NOT only — no other operators):
+    - AND  → both terms must appear:       `ETF AND approval`
+    - OR   → either term matches:          `hack OR exploit`
+    - NOT  → exclude a term:              `bitcoin NOT "bitcoin cash"`
+    - ""   → exact phrase match:           `"spot ETF"`
+    - ()   → group terms:                  `(hack OR exploit) AND ethereum`
+    - Combine freely:                      `("smart contract" OR DeFi) AND (hack OR exploit) NOT "bug bounty"`
+
     Examples:
     - `coin="btc,eth", language="en", sentiment="positive"`
-    - `q="ETF approval", coin="btc", timeframe="24"`
+    - `q="(ETF OR "spot ETF") AND (approval OR launch) NOT rejection", coin="btc", timeframe="24"`
+    - `q='("smart contract" OR DeFi OR dApp) AND (hack OR exploit OR vulnerability) NOT "bug bounty"', coin="eth"`
+    - `q="(halving OR "block reward") AND (price OR rally OR bull) NOT prediction", coin="btc", sort="relevancy"`
+    - `q_in_title="(SEC OR regulation OR ban) AND (crypto OR bitcoin OR blockchain) NOT rumor", language="en"`
     - `coin="sol", from_date="2025-01-01", to_date="2025-01-31"`
     """
     data = await fetch(
@@ -421,7 +449,7 @@ async def get_crypto_news(
             "language": language,
             "excludelanguage": exclude_language,
             "domain": domain,
-            "domainurl": domainurl,
+            "domainurl": domain_url,
             "excludedomain": exclude_domain,
             "timeframe": timeframe,
             "size": size,
@@ -434,10 +462,10 @@ async def get_crypto_news(
             "tag": tag,
             "sentiment": sentiment,
             "coin": coin,
-            "excludefield": excludefield,
+            "excludefield": exclude_field,
             "from_date": from_date,
             "to_date": to_date,
-            "removeduplicate": removeduplicate,
+            "removeduplicate": remove_duplicate,
             "id": article_id,
             "url": url,
             "sort": sort,
@@ -463,13 +491,13 @@ async def get_market_news(
     priority_domain: Optional[PRIORITY_DOMAIN] = None,
     timezone: Optional[TIMEZONE] = None,
     size: Optional[SIZE] = None,
-    domainurl: Optional[DOMAIN_URL_FILTER] = None,
+    domain_url: Optional[DOMAIN_URL_FILTER] = None,
     exclude_domain: Optional[DOMAIN_FILTER] = None,
     tag: Optional[TAG_FILTER] = None,
     sentiment: Optional[SENTIMENT] = None,
     article_id: Optional[ARTICLE_IDS] = None,
-    excludefield: Optional[EXCLUDE_FIELD_FILTER] = None,
-    removeduplicate: Optional[REMOVE_DUPLICATE] = None,
+    exclude_field: Optional[EXCLUDE_FIELD_FILTER] = None,
+    remove_duplicate: Optional[REMOVE_DUPLICATE] = None,
     exclude_language: Optional[LANGUAGE_FILTER] = None,
     organization: Optional[ORGANIZATION_FILTER] = None,
     url: Optional[URL] = None,
@@ -492,8 +520,20 @@ async def get_market_news(
     - Do NOT combine `country` with `exclude_country`.
     - Use `timeframe` OR `from_date`/`to_date`, not both.
 
+    Boolean query syntax (AND, OR, NOT only — no other operators):
+    - AND  → both terms must appear:       `earnings AND beat`
+    - OR   → either term matches:          `layoff OR restructuring`
+    - NOT  → exclude a term:               `Apple NOT iPhone`
+    - ""   → exact phrase match:           `"quarterly results"`
+    - ()   → group terms:                  `(earnings OR revenue) AND beat`
+    - Combine freely:                      `(merger OR acquisition) AND tech NOT (blocked OR failed)`
+
     Examples:
     - `symbol="AAPL,MSFT", language="en", sort="relevancy"`
+    - `q="(earnings OR revenue OR profit) AND (beat OR miss OR guidance) NOT rumor", symbol="AAPL,MSFT,GOOGL"`
+    - `q='("merger" OR "acquisition" OR "takeover") AND NOT (denied OR failed OR blocked)', country="us", priority_domain="top"`
+    - `q="(layoff OR layoffs OR restructuring) AND (tech OR technology) NOT recovery", language="en", timeframe="48"`
+    - `q_in_title="(FDA OR approval OR trial) AND (drug OR treatment OR therapy) NOT recall", sort="relevancy"`
     - `organization="tesla,nvidia", timeframe="48", sentiment="positive"`
     - `q="earnings beat", symbol="NVDA", from_date="2025-01-01"`
     - `country="us", priority_domain="top", sort="pubdateasc"`
@@ -516,13 +556,13 @@ async def get_market_news(
             "prioritydomain": priority_domain,
             "timezone": timezone,
             "size": size,
-            "domainurl": domainurl,
+            "domainurl": domain_url,
             "excludedomain": exclude_domain,
             "tag": tag,
             "sentiment": sentiment,
             "id": article_id,
-            "excludefield": excludefield,
-            "removeduplicate": removeduplicate,
+            "excludefield": exclude_field,
+            "removeduplicate": remove_duplicate,
             "excludelanguage": exclude_language,
             "organization": organization,
             "url": url,
@@ -541,7 +581,7 @@ async def get_news_sources(
     category: Optional[CATEGORY_FILTER] = None,
     language: Optional[LANGUAGE_FILTER] = None,
     priority_domain: Optional[PRIORITY_DOMAIN] = None,
-    domainurl: Optional[DOMAIN_URL_FILTER] = None,
+    domain_url: Optional[DOMAIN_URL_FILTER] = None,
 ) -> str:
     """
     Use this tool to DISCOVER available news sources, not to fetch articles.
@@ -559,7 +599,7 @@ async def get_news_sources(
     Examples:
     - `country="in", language="hi"` → Hindi sources in India
     - `category="technology", priority_domain="top"` → top tech sources
-    - `domainurl="reuters.com,bbc.com"` → check if specific domains are available
+    - `domain_url="reuters.com,bbc.com"` → check if specific domains are available
     """
     data = await fetch(
         "sources",
@@ -568,7 +608,7 @@ async def get_news_sources(
             "category": category,
             "language": language,
             "prioritydomain": priority_domain,
-            "domainurl": domainurl,
+            "domainurl": domain_url,
         },
     )
     return _format_sources(data)

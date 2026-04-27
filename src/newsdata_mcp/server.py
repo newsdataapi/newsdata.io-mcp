@@ -2,14 +2,8 @@ import sys
 import argparse
 import logging
 
+from . import client
 from .app import mcp
-from .client import (
-    get_archive_news,
-    get_crypto_news,    
-    get_latest_news,
-    get_market_news,
-    get_news_sources,
-)
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 
