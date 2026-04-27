@@ -48,10 +48,8 @@ CATEGORY_FILTER = Annotated[
     Field(
         pattern=_csv_pattern(*get_args(CATEGORY_CODE)),
         description=(
-            "Pass one or more NewsData category codes as a comma-separated string. "
-            "Do not use spaces. Allowed values are: business, crime, domestic, "
-            "education, entertainment, environment, food, health, lifestyle, "
-            "other, politics, science, sports, technology, top, tourism, world."
+            "Comma-separated NewsData category codes. No spaces. "
+            f"Allowed: {', '.join(get_args(CATEGORY_CODE))}."
         ),
         examples=["technology", "technology,science", "business,world"],
     ),
@@ -305,6 +303,7 @@ TIMEZONE = Annotated[
 PAGE = Annotated[
     str,
     Field(
+        min_length=1,
         description=(
             "Pagination cursor for fetching the next page of results. "
             "Only pass this if a previous API response returned a `nextPage` field. "
