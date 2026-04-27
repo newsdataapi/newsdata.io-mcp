@@ -71,7 +71,7 @@ async def fetch(endpoint: str, params: dict[str, Any]) -> dict[str, Any]:
 
 
 
-def _format_sentiment_stats(value: Any) -> str:
+def _format_sentiment_stats(value: Any) -> Optional[str]:
     if not isinstance(value, dict) or not value:
         return None
 
@@ -162,9 +162,13 @@ def _format_articles(data: dict[str, Any], endpoint_name: str) -> str:
 
 
 def _format_sources(data: dict[str, Any]) -> str:
+    if data.get("status") != 'success':
+        return f"Error: {data.get('message', 'Unknown error')}"
+
+    data = data.get("data", {}) or {}
     sources = data.get("results") or []
     if not sources:
-        return "No sources found matching your filters."
+        return "No source found matching your query."
 
     lines = [
         "endpoint: sources",
@@ -173,11 +177,10 @@ def _format_sources(data: dict[str, Any]) -> str:
     ]
 
     for index, source in enumerate(sources, 1):
-        source_id = _clean_text(source.get("id") or source.get("source_id")) or "N/A"
-        name = _clean_text(source.get("name")) or source_id
-        lines.append(f"[{index}] {name}")
-        _append_field(lines, "source_id", source_id)
+        lines.append(f"Source {index}:")
+        _append_field(lines, "source_id", source.get("id"))
         _append_field(lines, "url", source.get("url"))
+        _append_field(lines, "description", source.get("description"))
         _append_field(lines, "icon", source.get("icon"))
         _append_field(lines, "priority", source.get("priority"))
         _append_field(lines, "languages", source.get("language"))
@@ -185,9 +188,6 @@ def _format_sources(data: dict[str, Any]) -> str:
         _append_field(lines, "categories", source.get("category"))
         _append_field(lines, "total_article", source.get("total_article"))
         _append_field(lines, "last_fetch", source.get("last_fetch"))
-        description = _clean_text(source.get("description"))
-        if description:
-            lines.append(f"  description: {description}")
         lines.append("")
 
     return "\n".join(lines)
