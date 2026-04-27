@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "newsdata-mcp"
+version = "0.1.0"
+description = "MCP server for NewsData.io real-time, historical, crypto, market, and source discovery endpoints."
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "NewsData.io" }]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "news",
+    "newsdata",
+    "api",
+    "crypto",
+    "market",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "httpx>=0.28.1",
+    "mcp[cli]>=1.27.0",
+    "pydantic>=2.7.0",
+    "python-dotenv>=1.2.2",
+]
+
+[project.scripts]
+newsdata-mcp = "newsdata_mcp.server:main"
+
+[project.urls]
+Homepage = "https://newsdata.io"
+Documentation = "https://newsdata.io/documentation"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/newsdata_mcp"]
