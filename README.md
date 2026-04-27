@@ -20,7 +20,7 @@ An MCP server for [NewsData.io](https://newsdata.io/documentation) that exposes 
 
 ```bash
 git clone https://github.com/newsdataapi/newsdata.io-mcp.git
-cd newsdata_mcp
+cd newsdata.io-mcp
 uv sync
 ```
 
@@ -105,7 +105,7 @@ docker run --rm -p 8000:8000 \
 Add the server using the CLI:
 
 ```bash
-claude mcp add newsdata-mcp -- uv run /path/to/newsdata_mcp/newsdata_mcp/server.py --transport stdio
+claude mcp add newsdata-mcp -- uv --directory /path/to/newsdata.io-mcp run newsdata-mcp --transport stdio
 ```
 
 Or add it manually to your Claude Code MCP config file (`~/.claude/mcp.json` globally, or `.claude/mcp.json` per project):
@@ -116,7 +116,7 @@ Or add it manually to your Claude Code MCP config file (`~/.claude/mcp.json` glo
     "newsdata-mcp": {
       "command": "uv",
       "args": ["run", "newsdata-mcp", "--transport", "stdio"],
-      "cwd": "/path/to/newsdata_mcp",
+      "cwd": "/path/to/newsdata.io-mcp",
       "env": {
         "NEWSDATA_API_KEY": "your_newsdata_api_key"
       }
@@ -139,7 +139,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
     "newsdata-mcp": {
       "command": "uv",
       "args": ["run", "newsdata-mcp", "--transport", "stdio"],
-      "cwd": "/path/to/newsdata_mcp",
+      "cwd": "/path/to/newsdata.io-mcp",
       "env": {
         "NEWSDATA_API_KEY": "your_newsdata_api_key"
       }
@@ -162,7 +162,7 @@ Create or edit `.cursor/mcp.json` in your project root (or `~/.cursor/mcp.json` 
     "newsdata-mcp": {
       "command": "uv",
       "args": ["run", "newsdata-mcp", "--transport", "stdio"],
-      "cwd": "/path/to/newsdata_mcp",
+      "cwd": "/path/to/newsdata.io-mcp",
       "env": {
         "NEWSDATA_API_KEY": "your_newsdata_api_key"
       }
@@ -186,7 +186,7 @@ Create `.vscode/mcp.json` in your workspace (or add to User Settings as `mcp` ke
       "type": "stdio",
       "command": "uv",
       "args": ["run", "newsdata-mcp", "--transport", "stdio"],
-      "cwd": "/path/to/newsdata_mcp",
+      "cwd": "/path/to/newsdata.io-mcp",
       "env": {
         "NEWSDATA_API_KEY": "your_newsdata_api_key"
       }
@@ -209,7 +209,7 @@ Edit `~/.codeium/windsurf/mcp_config.json`:
     "newsdata-mcp": {
       "command": "uv",
       "args": ["run", "newsdata-mcp", "--transport", "stdio"],
-      "cwd": "/path/to/newsdata_mcp",
+      "cwd": "/path/to/newsdata.io-mcp",
       "env": {
         "NEWSDATA_API_KEY": "your_newsdata_api_key"
       }
