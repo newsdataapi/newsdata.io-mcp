@@ -44,31 +44,26 @@ async def fetch(endpoint: str, params: dict[str, Any]) -> dict[str, Any]:
             response.raise_for_status()
             data = response.json()
 
-        if response.status_code == 200 and data.get("status") == "success":
-            return {'status':'success', 'data': data}
-        
-        if response.status_code == 422:
-            return {'status':'error', 'message': "Invalid parameters provided. Please check your request."}
-        
-        elif response.status_code == 429:
-            return {'status':'error', 'message': "Rate limit exceeded. Try again later."}
+        if data.get("status") == "success":
+            return {'status': 'success', 'data': data}
 
-        elif response.status_code == 401:
-            return {'status':'error', 'message': "Unauthorized. API key is invalid."}
-        
-        else:
-            return {'status':'error', 'message': f"Something went wrong. Error details: {response.text}"}
-        
-            
+        return {'status': 'error', 'message': f"Something went wrong. Error details: {response.text}"}
+
     except httpx.TimeoutException:
-        return {'status':'error', 'message': f"Request timed out after {REQUEST_TIMEOUT} seconds. The Newsdata.io API may be experiencing delays."}
+        return {'status': 'error', 'message': f"Request timed out after {REQUEST_TIMEOUT} seconds. The Newsdata.io API may be experiencing delays."}
     except httpx.ConnectError:
-        return {'status':'error', 'message': "Failed to connect to Newsdata.io API. Please check your internet connection."}
+        return {'status': 'error', 'message': "Failed to connect to Newsdata.io API. Please check your internet connection."}
     except httpx.HTTPStatusError as e:
-        return {'status':'error', 'message': f"HTTP error occurred with Newsdata.io API: {str(e)} - Response: {e.response.text}"}
+        code = e.response.status_code
+        if code == 401:
+            return {'status': 'error', 'message': "Unauthorized. API key is invalid."}
+        elif code == 422:
+            return {'status': 'error', 'message': "Invalid parameters provided. Please check your request."}
+        elif code == 429:
+            return {'status': 'error', 'message': "Rate limit exceeded. Try again later."}
+        return {'status': 'error', 'message': f"HTTP error occurred with Newsdata.io API: {str(e)} - Response: {e.response.text}"}
     except Exception as e:
-        return {'status':'error', 'message': f"Unexpected error occurred with Newsdata.io API: {str(e)}"}
-
+        return {'status': 'error', 'message': f"Unexpected error occurred with Newsdata.io API: {str(e)}"}
 
 
 def _format_sentiment_stats(value: Any) -> Optional[str]:
@@ -76,8 +71,8 @@ def _format_sentiment_stats(value: Any) -> Optional[str]:
         return None
 
     sentiment_stats = []
-    for key, value in value.items():
-        sentiment_stats.append(f"{key}={value}")
+    for key, val in value.items():
+        sentiment_stats.append(f"{key}={val}")
     
     return ", ".join(sentiment_stats)
 
