@@ -1,6 +1,41 @@
+# Build context: the Dockerfile only COPYs pyproject.toml, uv.lock,
+# README.md, src/, and LICENSE. Everything else listed here is
+# excluded from the build context so `docker build` uploads less and
+# layer hashes stay stable when these change.
+
+# Python build / runtime artifacts
 __pycache__
-.env
-.git
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+dist/
+build/
+
+# Tooling caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Tests, CI, editor config — not needed inside the image
+tests/
+.github/
+.vscode/
+.idea/
+
+# Local scratch / per-machine markers
+.codex
+temp.py
+.claude/
+
+# VCS / environment
+.git/
 .gitignore
-.venv
-LICENSE
+.env
+
+# Project docs not shipped in the image (README.md is needed by
+# Dockerfile and is NOT listed here).
+CLAUDE.md
