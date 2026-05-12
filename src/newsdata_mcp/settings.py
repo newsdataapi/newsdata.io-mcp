@@ -1,0 +1,54 @@
+"""Runtime configuration read from environment variables.
+
+Loaded once at import time. Restart the server after changing env vars.
+"""
+import os
+import warnings
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+NEWSDATA_API_KEY = os.getenv("NEWSDATA_API_KEY")
+NEWSDATA_BASE_URL = os.getenv("NEWSDATA_BASE_URL", "https://newsdata.io/api/1")
+
+try:
+    REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))
+except (ValueError, TypeError):
+    warnings.warn(
+        "REQUEST_TIMEOUT must be an integer; falling back to 30",
+        stacklevel=2,
+    )
+    REQUEST_TIMEOUT = 30
+
+# Retry policy (network errors, 5xx, 429). Defaults sleep about a minute
+# total across all attempts (2s → 4s → 8s → 16s → 32s, capped at 60s).
+try:
+    MAX_RETRIES = int(os.getenv("NEWSDATA_MAX_RETRIES", "5"))
+except (ValueError, TypeError):
+    warnings.warn(
+        "NEWSDATA_MAX_RETRIES must be an integer; falling back to 5",
+        stacklevel=2,
+    )
+    MAX_RETRIES = 5
+
+try:
+    RETRY_BACKOFF = float(os.getenv("NEWSDATA_RETRY_BACKOFF", "2.0"))
+except (ValueError, TypeError):
+    warnings.warn(
+        "NEWSDATA_RETRY_BACKOFF must be a number; falling back to 2.0",
+        stacklevel=2,
+    )
+    RETRY_BACKOFF = 2.0
+
+try:
+    RETRY_BACKOFF_MAX = float(os.getenv("NEWSDATA_RETRY_BACKOFF_MAX", "60.0"))
+except (ValueError, TypeError):
+    warnings.warn(
+        "NEWSDATA_RETRY_BACKOFF_MAX must be a number; falling back to 60.0",
+        stacklevel=2,
+    )
+    RETRY_BACKOFF_MAX = 60.0
+
+if not NEWSDATA_API_KEY:
+    warnings.warn("NEWSDATA_API_KEY is not set", stacklevel=2)
