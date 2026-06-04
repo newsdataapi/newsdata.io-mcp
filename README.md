@@ -60,39 +60,6 @@ All values are read at module import time; restart the server after changing the
 
 ---
 
-## Running the Server
-
-Most users don't run the server directly — the MCP client spawns it as a subprocess. Use these only for manual testing or when running in HTTP mode.
-
-### stdio transport (for desktop / CLI clients)
-
-```bash
-uvx newsdata-mcp                          # transport defaults to stdio
-uvx newsdata-mcp --transport stdio        # explicit
-```
-
-### Streamable HTTP transport
-
-```bash
-uvx newsdata-mcp --transport streamable-http --host 0.0.0.0 --port 8000
-```
-
-### Version
-
-```bash
-uvx newsdata-mcp --version
-```
-
-### From a local checkout (development)
-
-```bash
-uv run newsdata-mcp --transport stdio
-# or via module path
-python -m newsdata_mcp.server --transport stdio
-```
-
----
-
 ## Docker
 
 ```bash
