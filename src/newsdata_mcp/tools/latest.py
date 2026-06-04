@@ -113,8 +113,8 @@ async def get_latest_news(
         "latest",
         {
             "q": q,
-            "qInTitle": q_in_title,
-            "qInMeta": q_in_meta,
+            "qintitle": q_in_title,
+            "qinmeta": q_in_meta,
             "country": country,
             "excludecountry": exclude_country,
             "category": category,

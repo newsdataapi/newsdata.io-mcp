@@ -36,7 +36,7 @@ async def test_latest_news_renders_text():
 
 
 @respx.mock
-async def test_latest_news_maps_snake_case_to_camel_case():
+async def test_latest_news_maps_snake_case_to_wire_names():
     route = respx.get("https://newsdata.io/api/1/latest").mock(
         return_value=httpx.Response(200, json={"status": "success", "results": []})
     )
@@ -47,8 +47,9 @@ async def test_latest_news_maps_snake_case_to_camel_case():
         article_id="aabbccddeeff00112233445566778899",
     )
     qs = dict(route.calls[0].request.url.params)
-    # snake_case in Python → NewsData's actual param names.
-    assert qs["qInTitle"] == "apple"
+    # snake_case in Python → NewsData's lowercase wire names (the API is
+    # case-insensitive but the canonical form across our SDKs is lowercase).
+    assert qs["qintitle"] == "apple"
     assert qs["excludecountry"] == "cn"
     assert qs["prioritydomain"] == "top"
     assert qs["id"] == "aabbccddeeff00112233445566778899"

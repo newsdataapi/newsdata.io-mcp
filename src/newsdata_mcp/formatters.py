@@ -19,12 +19,17 @@ def _format_error(envelope: dict[str, Any]) -> str:
     are present. Format is stable: ``Error[ (HTTP {code}[, retry after
     {N}s])]: {message}``. The optional clause uses parens + comma so the
     LLM can extract `HTTP \\d+` and `retry after \\d+s` with simple regex.
+
+    Special case: status_code 200 is a soft error (the HTTP request
+    succeeded but the API returned ``{"status": "error"}``). Showing
+    ``HTTP 200`` in front of an error message is confusing — an LLM may
+    interpret it as success — so the prefix is omitted for that case.
     """
     message = envelope.get("message", "Unknown error")
     code = envelope.get("status_code")
     retry_after = envelope.get("retry_after")
     parts: list[str] = []
-    if code is not None:
+    if code is not None and code != 200:
         parts.append(f"HTTP {code}")
     if retry_after is not None:
         parts.append(f"retry after {retry_after}s")

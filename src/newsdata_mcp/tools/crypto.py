@@ -85,8 +85,8 @@ async def get_crypto_news(
         "crypto",
         {
             "q": q,
-            "qInTitle": q_in_title,
-            "qInMeta": q_in_meta,
+            "qintitle": q_in_title,
+            "qinmeta": q_in_meta,
             "language": language,
             "excludelanguage": exclude_language,
             "domain": domain,

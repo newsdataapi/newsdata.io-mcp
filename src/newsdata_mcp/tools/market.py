@@ -110,8 +110,8 @@ async def get_market_news(
         "market",
         {
             "q": q,
-            "qInTitle": q_in_title,
-            "qInMeta": q_in_meta,
+            "qintitle": q_in_title,
+            "qinmeta": q_in_meta,
             "from_date": from_date,
             "to_date": to_date,
             "domain": domain,
