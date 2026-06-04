@@ -21,15 +21,25 @@ All tools are read-only and idempotent; the MCP-protocol annotations let compati
 
 ## Installation
 
+The server is published on PyPI as [`newsdata-mcp`](https://pypi.org/project/newsdata-mcp/). The recommended path is to let your MCP client launch it via [`uvx`](https://docs.astral.sh/uv/guides/tools/) — no clone, no `uv sync`, no virtualenv to manage. The package is downloaded and cached on first launch.
+
 ```bash
-git clone https://github.com/newsdataapi/newsdata.io-mcp.git
-cd newsdata.io-mcp
-uv sync
+# verify uvx + the server work end-to-end (optional)
+uvx newsdata-mcp --version
 ```
+
+Then add the server to your MCP client (see [Editor & Client Integrations](#editor--client-integrations) below). Every client config uses the same launch command:
+
+```json
+"command": "uvx",
+"args": ["newsdata-mcp"]
+```
+
+For a local development checkout, see [Development](#development) below.
 
 ### Configure environment
 
-Copy `.env.example` to `.env` and fill in your API key:
+Set `NEWSDATA_API_KEY` in your client config's `env` block (per the per-client examples below). When running the server outside an MCP client (development, Docker, `streamable-http`), use a `.env` file:
 
 ```bash
 cp .env.example .env
@@ -52,29 +62,33 @@ All values are read at module import time; restart the server after changing the
 
 ## Running the Server
 
+Most users don't run the server directly — the MCP client spawns it as a subprocess. Use these only for manual testing or when running in HTTP mode.
+
 ### stdio transport (for desktop / CLI clients)
 
 ```bash
-uv run newsdata-mcp --transport stdio
+uvx newsdata-mcp                          # transport defaults to stdio
+uvx newsdata-mcp --transport stdio        # explicit
 ```
 
 ### Streamable HTTP transport
 
 ```bash
-uv run newsdata-mcp --transport streamable-http --host 0.0.0.0 --port 8000
-```
-
-### Module syntax (alternative)
-
-```bash
-python -m newsdata_mcp.server --transport stdio
-python -m newsdata_mcp.server --transport streamable-http --host 0.0.0.0 --port 8000
+uvx newsdata-mcp --transport streamable-http --host 0.0.0.0 --port 8000
 ```
 
 ### Version
 
 ```bash
-uv run newsdata-mcp --version
+uvx newsdata-mcp --version
+```
+
+### From a local checkout (development)
+
+```bash
+uv run newsdata-mcp --transport stdio
+# or via module path
+python -m newsdata_mcp.server --transport stdio
 ```
 
 ---
@@ -104,7 +118,7 @@ The image is a multistage build: dependencies are installed from `uv.lock` in a 
 
 ## Editor & Client Integrations
 
-The simplest way is to add the server to your MCP client's JSON config. Each client picks up the config on restart. Substitute `/path/to/newsdata.io-mcp` for your local clone path.
+The simplest way is to add the server to your MCP client's JSON config. Each client picks up the config on restart. All examples use `uvx`, which downloads + caches the published package — no local clone required.
 
 ### Claude Code
 
@@ -114,9 +128,8 @@ Either edit `~/.claude/mcp.json` (global) or `.claude/mcp.json` (per-project):
 {
   "mcpServers": {
     "newsdata-mcp": {
-      "command": "uv",
-      "args": ["run", "newsdata-mcp", "--transport", "stdio"],
-      "cwd": "/path/to/newsdata.io-mcp",
+      "command": "uvx",
+      "args": ["newsdata-mcp"],
       "env": {
         "NEWSDATA_API_KEY": "your_newsdata_api_key"
       }
@@ -144,9 +157,8 @@ Create `.vscode/mcp.json` in your workspace (or add an `mcp` key to user setting
   "servers": {
     "newsdata-mcp": {
       "type": "stdio",
-      "command": "uv",
-      "args": ["run", "newsdata-mcp", "--transport", "stdio"],
-      "cwd": "/path/to/newsdata.io-mcp",
+      "command": "uvx",
+      "args": ["newsdata-mcp"],
       "env": {
         "NEWSDATA_API_KEY": "your_newsdata_api_key"
       }
@@ -166,7 +178,8 @@ Edit `~/.codeium/windsurf/mcp_config.json` — same JSON block as the Claude Cod
 Run the server in HTTP mode locally:
 
 ```bash
-uv run newsdata-mcp --transport streamable-http --host 127.0.0.1 --port 8000
+NEWSDATA_API_KEY=your_key uvx newsdata-mcp \
+  --transport streamable-http --host 127.0.0.1 --port 8000
 ```
 
 Then in **ChatGPT → Settings → Connectors → Add custom connector**, register `http://127.0.0.1:8000/mcp` as the connector endpoint.
@@ -264,7 +277,10 @@ Full API reference: [https://newsdata.io/documentation](https://newsdata.io/docu
 ## Development
 
 ```bash
-uv sync --all-groups                                       # install dev deps
+git clone https://github.com/newsdataapi/newsdata.io-mcp.git
+cd newsdata.io-mcp
+uv sync --all-groups                                       # install runtime + dev deps
+
 uv run pytest                                              # unit tests only (default)
 NEWSDATA_INTEGRATION_KEY=<key> uv run pytest -m integration  # live-API tests
 uv run pytest --cov=newsdata_mcp --cov-report=term-missing  # with coverage
@@ -273,6 +289,14 @@ uv run mypy
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same four commands on every push/PR to `main`.
+
+### Releasing
+
+1. Bump `__version__` in `src/newsdata_mcp/__init__.py`.
+2. Commit and tag: `git tag vX.Y.Z && git push --tags`.
+3. `.github/workflows/release.yml` builds the sdist + wheel, publishes to PyPI via Trusted Publishing (no token), and creates a GitHub Release with auto-generated notes.
+
+One-time PyPI setup: configure a Trusted Publisher on the `newsdata-mcp` project pointing at `newsdataapi/newsdata.io-mcp`, workflow `release.yml`, environment `pypi`.
 
 ## License
 
