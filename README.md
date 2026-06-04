@@ -298,13 +298,13 @@ Official Newsdata.io clients for direct REST access (no MCP layer):
 | Language / Runtime | Repo |
 |---|---|
 | Python | [newsdataapi/python-client](https://github.com/newsdataapi/python-client) ([PyPI](https://pypi.org/project/newsdataapi/)) |
-| Node.js | [newsdataapi/newsdata-nodejs-client](https://github.com/newsdataapi/newsdata-nodejs-client) |
-| React (hooks) | [newsdataapi/newsdata-reactjs-client](https://github.com/newsdataapi/newsdata-reactjs-client) |
+| Node.js | [newsdataapi/newsdata-nodejs-client](https://github.com/newsdataapi/newsdata-nodejs-client) ([npm](https://www.npmjs.com/package/newsdata-nodejs-client)) |
+| React (hooks) | [newsdataapi/newsdata-reactjs-client](https://github.com/newsdataapi/newsdata-reactjs-client) ([npm](https://www.npmjs.com/package/newsdataapi)) |
 | PHP | [newsdataapi/php-client](https://github.com/newsdataapi/php-client) ([Packagist](https://packagist.org/packages/newsdataio/newsdataapi)) |
-| Java | [newsdataapi/newsdata-java-sdk](https://github.com/newsdataapi/newsdata-java-sdk) |
+| Java | [newsdataapi/newsdata-java-sdk](https://github.com/newsdataapi/newsdata-java-sdk) ([Maven Central](https://central.sonatype.com/artifact/io.newsdata/newsdataapi)) |
 | .NET | [newsdataapi/newsdata-dotnet-sdk](https://github.com/newsdataapi/newsdata-dotnet-sdk) ([NuGet](https://www.nuget.org/packages/Newsdata.Api/)) |
-| Go | [newsdataapi/newsdata-go-client](https://github.com/newsdataapi/newsdata-go-client) |
-| Dart / Flutter | [newsdataapi/newsdata-flutter-client](https://github.com/newsdataapi/newsdata-flutter-client) |
+| Go | [newsdataapi/newsdata-go-client](https://github.com/newsdataapi/newsdata-go-client) ([pkg.go.dev](https://pkg.go.dev/github.com/newsdataapi/newsdata-go-client)) |
+| Dart / Flutter | [newsdataapi/newsdata-flutter-client](https://github.com/newsdataapi/newsdata-flutter-client) ([pub.dev](https://pub.dev/packages/newsdataapi)) |
 
 Also see [free news datasets](https://github.com/newsdataapi/newsdata.io-free-datasets) for ML / NLP work.
 
