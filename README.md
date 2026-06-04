@@ -1,21 +1,38 @@
-# NewsData MCP Server
+<div align="center">
 
-An MCP server for [NewsData.io](https://newsdata.io/documentation) that exposes real-time, historical, crypto, market, source-discovery, and aggregate-count tools to any MCP-compatible client.
+![Newsdata.io logo](https://raw.githubusercontent.com/newsdataapi/newsdata.io-mcp/main/newsdata-logo.png)
 
-## Available Tools
+# Newsdata.io MCP Server
 
-| Tool | Endpoint | Description |
-|---|---|---|
-| `get_latest_news` | `/api/1/latest` | Recent and breaking news (last 48h) |
-| `get_archive_news` | `/api/1/archive` | Historical news, filterable by `from_date` / `to_date` |
-| `get_crypto_news` | `/api/1/crypto` | Crypto and blockchain-focused coverage |
-| `get_market_news` | `/api/1/market` | Stock, financial, and market-related news |
-| `get_news_sources` | `/api/1/sources` | Source discovery by country, category, or language |
-| `get_news_counts` | `/api/1/count` | Aggregate article counts over a date range (`hour` / `day` buckets or single `all` total) |
-| `get_crypto_counts` | `/api/1/crypto/count` | Aggregate crypto article counts over a date range |
-| `get_market_counts` | `/api/1/market/count` | Aggregate market article counts over a date range |
+[![PyPI Version](https://img.shields.io/pypi/v/newsdata-mcp?logo=pypi&color=3775a9)](https://pypi.org/project/newsdata-mcp/)
+[![PyPI Downloads](https://img.shields.io/pypi/dm/newsdata-mcp?color=3775a9)](https://pypi.org/project/newsdata-mcp/)
+[![CI](https://img.shields.io/github/actions/workflow/status/newsdataapi/newsdata.io-mcp/ci.yml?branch=main&logo=github&label=CI)](https://github.com/newsdataapi/newsdata.io-mcp/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/pypi/pyversions/newsdata-mcp?logo=python&logoColor=white)](https://pypi.org/project/newsdata-mcp/)
+[![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/newsdataapi/newsdata.io-mcp/blob/main/LICENSE)
 
-All tools are read-only and idempotent; the MCP-protocol annotations let compatible clients (Claude Code, MCP Inspector, etc.) cache and parallelize calls.
+</div>
+
+The official MCP server for the [Newsdata.io](https://newsdata.io) News API. It exposes real-time, historical, crypto, and market news — plus source discovery and aggregate counts — as tools for **Claude Desktop**, **Claude Code**, **Cursor**, **Zed**, **Cline**, **VS Code Copilot**, **Windsurf**, **ChatGPT Desktop**, and any other MCP-compatible AI assistant. Ask questions in natural language; the assistant calls the right tool and returns formatted news.
+
+## Example prompts
+
+```
+What's breaking in US politics today? Summarize the top 5 stories.
+```
+```
+Find positive-sentiment crypto news about Bitcoin from the last 24 hours.
+```
+```
+How many articles mentioned "interest rates" each day in January 2025?
+```
+```
+Pull all market news on AAPL and NVDA, then list the headlines with publication dates.
+```
+```
+Which English-language news sources cover both technology and business in the US?
+```
+
+The assistant maps these requests to the appropriate tool (`get_latest_news`, `get_crypto_news`, `get_news_counts`, `get_market_news`, `get_news_sources`, etc.) — no manual API calls needed.
 
 ---
 
@@ -39,7 +56,7 @@ For a local development checkout, see [Development](#development) below.
 
 ### Configure environment
 
-Set `NEWSDATA_API_KEY` in your client config's `env` block (per the per-client examples below). When running the server outside an MCP client (development, Docker, `streamable-http`), use a `.env` file:
+Set `NEWSDATA_API_KEY` in your client config's `env` block (per the per-client examples below). Get an API key at [newsdata.io](https://newsdata.io) — the free tier is generous enough to evaluate. When running the server outside an MCP client (development, Docker, `streamable-http`), use a `.env` file:
 
 ```bash
 cp .env.example .env
@@ -48,7 +65,7 @@ cp .env.example .env
 
 | Variable | Default | Notes |
 |---|---|---|
-| `NEWSDATA_API_KEY` | _(required)_ | NewsData.io credential. Missing key returns an error envelope on every call. |
+| `NEWSDATA_API_KEY` | _(required)_ | Newsdata.io credential. Missing key returns an error envelope on every call. |
 | `REQUEST_TIMEOUT` | `30` | Per-request timeout in seconds. |
 | `NEWSDATA_BASE_URL` | `https://newsdata.io/api/1` | Override for staging or a local mock. |
 | `NEWSDATA_MAX_RETRIES` | `5` | Maximum attempts for transient failures (network, 5xx, 429). |
@@ -57,19 +74,6 @@ cp .env.example .env
 | `NEWSDATA_INTEGRATION_KEY` | _(unset)_ | Used only by `pytest -m integration`. Without it, live-API tests skip. |
 
 All values are read at module import time; restart the server after changing them.
-
----
-
-## Docker
-
-For HTTP-mode deployments (e.g. behind a reverse proxy, or backing the ChatGPT Desktop connector):
-
-```bash
-docker build -t newsdata-mcp .
-docker run --rm -p 8000:8000 -e NEWSDATA_API_KEY=your_newsdata_api_key newsdata-mcp
-```
-
-The image is a multistage build on `python:3.12-slim` and runs as a non-root user — see the [Dockerfile](Dockerfile) for details.
 
 ---
 
@@ -140,6 +144,23 @@ NEWSDATA_API_KEY=your_key uvx newsdata-mcp \
 ```
 
 Then in **ChatGPT → Settings → Connectors → Add custom connector**, register `http://127.0.0.1:8000/mcp` as the connector endpoint.
+
+---
+
+## Available Tools
+
+| Tool | Endpoint | Description |
+|---|---|---|
+| `get_latest_news` | `/api/1/latest` | Recent and breaking news (last 48h) |
+| `get_archive_news` | `/api/1/archive` | Historical news, filterable by `from_date` / `to_date` |
+| `get_crypto_news` | `/api/1/crypto` | Crypto and blockchain-focused coverage |
+| `get_market_news` | `/api/1/market` | Stock, financial, and market-related news |
+| `get_news_sources` | `/api/1/sources` | Source discovery by country, category, or language |
+| `get_news_counts` | `/api/1/count` | Aggregate article counts over a date range (`hour` / `day` buckets or single `all` total) |
+| `get_crypto_counts` | `/api/1/crypto/count` | Aggregate crypto article counts over a date range |
+| `get_market_counts` | `/api/1/market/count` | Aggregate market article counts over a date range |
+
+All tools are read-only and idempotent; the MCP-protocol annotations let compatible clients (Claude Code, MCP Inspector, etc.) cache and parallelize calls.
 
 ---
 
@@ -231,6 +252,19 @@ Full API reference: [https://newsdata.io/documentation](https://newsdata.io/docu
 
 ---
 
+## Docker
+
+For HTTP-mode deployments (e.g. behind a reverse proxy, or backing the ChatGPT Desktop connector):
+
+```bash
+docker build -t newsdata-mcp .
+docker run --rm -p 8000:8000 -e NEWSDATA_API_KEY=your_newsdata_api_key newsdata-mcp
+```
+
+The image is a multistage build on `python:3.12-slim` and runs as a non-root user — see the [Dockerfile](Dockerfile) for details.
+
+---
+
 ## Development
 
 ```bash
@@ -254,6 +288,25 @@ CI (`.github/workflows/ci.yml`) runs the same four commands on every push/PR to 
 3. `.github/workflows/release.yml` builds the sdist + wheel, publishes to PyPI via Trusted Publishing (no token), and creates a GitHub Release with auto-generated notes.
 
 One-time PyPI setup: configure a Trusted Publisher on the `newsdata-mcp` project pointing at `newsdataapi/newsdata.io-mcp`, workflow `release.yml`, environment `pypi`.
+
+---
+
+## Related libraries
+
+Official Newsdata.io clients for direct REST access (no MCP layer):
+
+| Language / Runtime | Repo |
+|---|---|
+| Python | [newsdataapi/python-client](https://github.com/newsdataapi/python-client) ([PyPI](https://pypi.org/project/newsdataapi/)) |
+| Node.js | [newsdataapi/newsdata-nodejs-client](https://github.com/newsdataapi/newsdata-nodejs-client) |
+| React (hooks) | [newsdataapi/newsdata-reactjs-client](https://github.com/newsdataapi/newsdata-reactjs-client) |
+| PHP | [newsdataapi/php-client](https://github.com/newsdataapi/php-client) ([Packagist](https://packagist.org/packages/newsdataio/newsdataapi)) |
+| Java | [newsdataapi/newsdata-java-sdk](https://github.com/newsdataapi/newsdata-java-sdk) |
+| .NET | [newsdataapi/newsdata-dotnet-sdk](https://github.com/newsdataapi/newsdata-dotnet-sdk) ([NuGet](https://www.nuget.org/packages/Newsdata.Api/)) |
+| Go | [newsdataapi/newsdata-go-client](https://github.com/newsdataapi/newsdata-go-client) |
+| Dart / Flutter | [newsdataapi/newsdata-flutter-client](https://github.com/newsdataapi/newsdata-flutter-client) |
+
+Also see [free news datasets](https://github.com/newsdataapi/newsdata.io-free-datasets) for ML / NLP work.
 
 ## License
 
