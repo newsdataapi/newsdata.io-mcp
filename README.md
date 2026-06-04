@@ -62,24 +62,14 @@ All values are read at module import time; restart the server after changing the
 
 ## Docker
 
+For HTTP-mode deployments (e.g. behind a reverse proxy, or backing the ChatGPT Desktop connector):
+
 ```bash
 docker build -t newsdata-mcp .
 docker run --rm -p 8000:8000 -e NEWSDATA_API_KEY=your_newsdata_api_key newsdata-mcp
 ```
 
-Run in stdio mode:
-
-```bash
-docker run --rm -i -e NEWSDATA_API_KEY=your_newsdata_api_key newsdata-mcp --transport stdio
-```
-
-Pass a `.env` file:
-
-```bash
-docker run --rm -p 8000:8000 --env-file .env newsdata-mcp
-```
-
-The image is a multistage build: dependencies are installed from `uv.lock` in a `python:3.12-slim` builder, then the resulting venv plus `LICENSE` is copied into a fresh `python:3.12-slim` runtime. The container runs as a non-root `app` user.
+The image is a multistage build on `python:3.12-slim` and runs as a non-root user — see the [Dockerfile](Dockerfile) for details.
 
 ---
 
