@@ -9,6 +9,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/newsdataapi/newsdata.io-mcp/ci.yml?branch=main&logo=github&label=CI)](https://github.com/newsdataapi/newsdata.io-mcp/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/pypi/pyversions/newsdata-mcp?logo=python&logoColor=white)](https://pypi.org/project/newsdata-mcp/)
 [![License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/newsdataapi/newsdata.io-mcp/blob/main/LICENSE)
+[![OpenAPI](https://img.shields.io/badge/OpenAPI-3.1-85EA2D)](https://newsdata.io/openapi.json)
 
 </div>
 
@@ -248,7 +249,7 @@ Notes on parameter shapes:
 - The count endpoints return aggregate buckets (one per `interval` slot) rather than article content.
 - Every tool returns plain text (the MCP-protocol return type). Errors come back as `Error (HTTP 4xx): …` with the status code and a friendly message; HTTP 429 errors include a `retry after Ns` hint when the upstream `Retry-After` header was parseable.
 
-Full API reference: [https://newsdata.io/documentation](https://newsdata.io/documentation).
+Full API reference: [https://newsdata.io/documentation](https://newsdata.io/documentation). Machine-readable contract: [OpenAPI 3.1 spec](https://newsdata.io/openapi.json).
 
 ---
 
