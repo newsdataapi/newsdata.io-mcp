@@ -11,6 +11,7 @@ from ..params import (
     FLAG,
     INTERVAL,
     LANGUAGE_FILTER,
+    MARKET_ID_FILTER,
     ORGANIZATION_FILTER,
     PAGE,
     PRIORITY_DOMAIN,
@@ -20,7 +21,6 @@ from ..params import (
     SENTIMENT_SCORE,
     SIZE,
     SORT,
-    SYMBOL_FILTER,
     TAG_FILTER,
 )
 from ..validators import (
@@ -47,7 +47,7 @@ async def get_market_counts(
     image: FLAG | None = None,
     video: FLAG | None = None,
     organization: ORGANIZATION_FILTER | None = None,
-    symbol: SYMBOL_FILTER | None = None,
+    market_id: MARKET_ID_FILTER | None = None,
     priority_domain: PRIORITY_DOMAIN | None = None,
     page: PAGE | None = None,
     sentiment: SENTIMENT | None = None,
@@ -84,10 +84,10 @@ async def get_market_counts(
     - `sentiment_score` is a minimum confidence percentage (0–100) for the chosen
       `sentiment` label, e.g. `sentiment="positive", sentiment_score=70` filters
       the count to articles whose positive-sentiment score is at least 70.
-    - Use `symbol` and/or `organization` to narrow to specific tickers / companies.
+    - Use `market_id` and/or `organization` to narrow to specific tickers / companies.
 
     Examples:
-    - `from_date="2024-01-01", to_date="2024-01-31", symbol="AAPL", interval="day"`
+    - `from_date="2024-01-01", to_date="2024-01-31", market_id="AAPL", interval="day"`
       → daily Apple counts in January.
     - `from_date="2024-01-01", to_date="2024-03-31", interval="hour", organization=["tesla", "nvidia"]`
       → hourly Tesla+NVIDIA counts for Q1.
@@ -120,7 +120,7 @@ async def get_market_counts(
             "image": image,
             "video": video,
             "organization": organization,
-            "symbol": symbol,
+            "market_id": market_id,
             "prioritydomain": priority_domain,
             "page": page,
             "sentiment": sentiment,

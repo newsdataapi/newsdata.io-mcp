@@ -84,13 +84,13 @@ async def test_crypto_news_uses_crypto_endpoint_and_passes_coin():
 
 
 @respx.mock
-async def test_market_news_uses_market_endpoint_and_passes_symbol():
+async def test_market_news_uses_market_endpoint_and_passes_market_id():
     route = respx.get("https://newsdata.io/api/1/market").mock(
         return_value=httpx.Response(200, json={"status": "success", "results": []})
     )
-    await get_market_news(symbol="AAPL,NVDA", country="us")
+    await get_market_news(market_id="AAPL,NVDA", country="us")
     qs = dict(route.calls[0].request.url.params)
-    assert qs["symbol"] == "AAPL,NVDA"
+    assert qs["market_id"] == "AAPL,NVDA"
     assert qs["country"] == "us"
 
 
@@ -300,13 +300,13 @@ async def test_crypto_news_accepts_list_for_coin():
 
 
 @respx.mock
-async def test_market_news_accepts_list_for_symbol():
+async def test_market_news_accepts_list_for_market_id():
     route = respx.get("https://newsdata.io/api/1/market").mock(
         return_value=httpx.Response(200, json={"status": "success", "results": []})
     )
-    await get_market_news(symbol=["AAPL", "MSFT"])
+    await get_market_news(market_id=["AAPL", "MSFT"])
     qs = dict(route.calls[0].request.url.params)
-    assert qs["symbol"] == "AAPL,MSFT"
+    assert qs["market_id"] == "AAPL,MSFT"
 
 
 @respx.mock
@@ -462,7 +462,7 @@ async def test_archive_news_accepts_tag_region_organization():
 
 @respx.mock(assert_all_called=False)
 async def test_market_news_sentiment_score_without_sentiment_short_circuits():
-    out = await get_market_news(sentiment_score=80, symbol="NVDA")
+    out = await get_market_news(sentiment_score=80, market_id="NVDA")
     assert out.startswith("Error:")
     assert "'sentiment_score'" in out
     assert "'sentiment'" in out
@@ -477,12 +477,12 @@ async def test_market_news_sentiment_pair_passes():
     await get_market_news(
         sentiment="positive",
         sentiment_score=80,
-        symbol="NVDA",
+        market_id="NVDA",
     )
     qs = dict(route.calls[0].request.url.params)
     assert qs["sentiment"] == "positive"
     assert qs["sentiment_score"] == "80"
-    assert qs["symbol"] == "NVDA"
+    assert qs["market_id"] == "NVDA"
 
 
 @respx.mock
@@ -634,12 +634,12 @@ async def test_market_counts_hits_market_count_endpoint():
     out = await get_market_counts(
         from_date="2024-01-01",
         to_date="2024-01-31",
-        symbol="AAPL",
+        market_id="AAPL",
         interval="day",
     )
     assert route.called
     qs = dict(route.calls[0].request.url.params)
-    assert qs["symbol"] == "AAPL"
+    assert qs["market_id"] == "AAPL"
     assert qs["interval"] == "day"
     assert "endpoint: market/count" in out
 

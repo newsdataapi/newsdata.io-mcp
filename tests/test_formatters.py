@@ -97,6 +97,27 @@ def test_format_article_item_omits_missing_fields():
     assert not any(line.startswith("description:") for line in lines)
 
 
+def test_format_article_item_renders_symbol_and_market_id():
+    """Market articles carry both `symbol` and `market_id`; the two are
+    separate response fields and both render."""
+    lines = _format_article_item(
+        {
+            "article_id": "x",
+            "title": "Apple beats earnings",
+            "symbol": ["AAPL", "MSFT"],
+            "market_id": ["NASDAQ:AAPL", "NASDAQ:MSFT"],
+        }
+    )
+    assert "symbols: AAPL, MSFT" in lines
+    assert "market_id: NASDAQ:AAPL, NASDAQ:MSFT" in lines
+
+
+def test_format_article_item_market_id_absent_emits_no_line():
+    lines = _format_article_item({"article_id": "x", "symbol": ["AAPL"]})
+    assert "symbols: AAPL" in lines
+    assert not any(line.startswith("market_id:") for line in lines)
+
+
 # ---------- format_articles ----------
 
 def test_format_articles_error_envelope():

@@ -194,7 +194,7 @@ get_crypto_news(
 
 ```text
 get_market_news(
-  symbol=["AAPL", "NVDA"],
+  market_id=["AAPL", "NVDA"],
   country="us"
 )
 ```
@@ -219,7 +219,7 @@ get_news_counts(
 get_market_counts(
   from_date="2024-01-01",
   to_date="2024-03-31",
-  symbol=["AAPL", "NVDA"],
+  market_id=["AAPL", "NVDA"],
   interval="hour"
 )
 ```
