@@ -88,7 +88,7 @@ async def test_live_get_crypto_news():
 
 
 async def test_live_get_market_news():
-    out = await get_market_news(symbol="AAPL", size=1)
+    out = await get_market_news(market_id="AAPL", size=1)
     _assert_renders_endpoint(out, "market")
 
 
@@ -103,5 +103,5 @@ async def test_live_get_crypto_counts():
 
 
 async def test_live_get_market_counts():
-    out = await get_market_counts(from_date="2024-01-01", to_date="2024-01-07", symbol="AAPL")
+    out = await get_market_counts(from_date="2024-01-01", to_date="2024-01-07", market_id="AAPL")
     _assert_renders_endpoint(out, "market/count")

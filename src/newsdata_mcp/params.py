@@ -378,16 +378,16 @@ COIN_FILTER = Annotated[
     ),
 ]
 
-SYMBOL_FILTER = Annotated[
+MARKET_ID_FILTER = Annotated[
     str | list[str],
     Field(
         min_length=1,
         max_length=128,
         pattern=r"^[A-Za-z0-9._-]+(?:,[A-Za-z0-9._-]+){0,9}$",
         description=(
-            "One or more market symbols or stock tickers. "
+            "One or more market identifiers or stock tickers. "
             "Accepts either a list (preferred): `['AAPL', 'MSFT']`, "
-            "or a comma-separated string: `'AAPL,MSFT'`. Max 10 symbols."
+            "or a comma-separated string: `'AAPL,MSFT'`. Max 10 market IDs."
         ),
         examples=["AAPL", ["AAPL", "MSFT"], "TSLA,NVDA,AMZN"],
     ),

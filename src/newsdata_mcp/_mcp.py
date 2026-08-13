@@ -72,7 +72,7 @@ mcp = FastMCP(
         - Never pass None, null, or empty string — omit optional parameters entirely.
         - Multi-value filters (country, exclude_country, language, exclude_language,
           category, exclude_category, tag, region, domain, exclude_domain, domainurl,
-          coin, symbol, organization, article_id, creator, datatype, excludefield)
+          coin, market_id, organization, article_id, creator, datatype, excludefield)
           accept EITHER a Python list `['us', 'gb']` OR a comma-separated string `'us,gb'`.
           Lists are preferred for clarity.
         - Boolean flags (image, video, full_content, removeduplicate) accept True/False (preferred)

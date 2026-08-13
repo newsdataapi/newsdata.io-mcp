@@ -99,6 +99,7 @@ def _format_article_item(article: dict[str, Any]) -> list[str]:
     # Domain-specific.
     _append_field(lines, "coins", article.get("coin"))
     _append_field(lines, "symbols", article.get("symbol"))
+    _append_field(lines, "market_id", article.get("market_id"))
     _append_field(lines, "datatype", article.get("datatype"))
     # Media.
     _append_field(lines, "image_url", article.get("image_url"))

@@ -12,6 +12,7 @@ from ..params import (
     EXCLUDE_FIELD_FILTER,
     FLAG,
     LANGUAGE_FILTER,
+    MARKET_ID_FILTER,
     ORGANIZATION_FILTER,
     PAGE,
     PRIORITY_DOMAIN,
@@ -21,7 +22,6 @@ from ..params import (
     SENTIMENT_SCORE,
     SIZE,
     SORT,
-    SYMBOL_FILTER,
     TAG_FILTER,
     TIMEFRAME,
     TIMEZONE,
@@ -61,7 +61,7 @@ async def get_market_news(
     organization: ORGANIZATION_FILTER | None = None,
     url: URL | None = None,
     sort: SORT | None = None,
-    symbol: SYMBOL_FILTER | None = None,
+    market_id: MARKET_ID_FILTER | None = None,
     country: COUNTRY_FILTER | None = None,
     exclude_country: COUNTRY_FILTER | None = None,
     creator: CREATOR_FILTER | None = None,
@@ -81,9 +81,9 @@ async def get_market_news(
     - `sentiment_score` requires `sentiment` to also be set.
 
     Other guidance:
-    - Use `symbol` for stock/market tickers (e.g. `AAPL`, `TSLA,NVDA`).
+    - Use `market_id` for stock/market tickers (e.g. `AAPL`, `TSLA,NVDA`).
     - Use `organization` for company name filtering (e.g. `tesla,apple`).
-    - `symbol` and `organization` can be combined for precision.
+    - `market_id` and `organization` can be combined for precision.
     - `category` is NOT available on this endpoint.
     - Use `timeframe` OR `from_date`/`to_date`, not both.
     - `creator` filters by author/byline name(s).
@@ -93,11 +93,11 @@ async def get_market_news(
       only articles whose positive-sentiment score is at least 80.
 
     Examples:
-    - `symbol="AAPL,MSFT", language="en", sort="relevancy"`
+    - `market_id="AAPL,MSFT", language="en", sort="relevancy"`
     - `organization="tesla,nvidia", timeframe="48", sentiment="positive"`
-    - `q="earnings beat", symbol="NVDA", from_date="2025-01-01"`
+    - `q="earnings beat", market_id="NVDA", from_date="2025-01-01"`
     - `country="us", priority_domain="top", sort="pubdateasc"`
-    - `sentiment="positive", sentiment_score=80, symbol="NVDA"`
+    - `sentiment="positive", sentiment_score=80, market_id="NVDA"`
     """
     error = (
         check_mutex_groups(locals())
@@ -135,7 +135,7 @@ async def get_market_news(
             "organization": organization,
             "url": url,
             "sort": sort,
-            "symbol": symbol,
+            "market_id": market_id,
             "country": country,
             "excludecountry": exclude_country,
             "creator": creator,
