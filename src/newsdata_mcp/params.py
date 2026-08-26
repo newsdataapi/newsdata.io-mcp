@@ -130,6 +130,20 @@ SIZE = Annotated[
     ),
 ]
 
+REGISTRATION_ID = Annotated[
+    str,
+    Field(
+        min_length=32,
+        max_length=32,
+        description=(
+            "The 32-character `registration_id` of a real-time query, as "
+            "returned by `register_realtime_query` or listed by "
+            "`list_realtime_queries`. Do not invent one — look it up."
+        ),
+        examples=["9b2d1e8a7c4f4b6e9d3a5c7e1f2a4b6c"],
+    ),
+]
+
 ARTICLE_IDS = Annotated[
     str | list[str],
     Field(

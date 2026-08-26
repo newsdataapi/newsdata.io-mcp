@@ -72,6 +72,8 @@ cp .env.example .env
 | `NEWSDATA_MAX_RETRIES` | `5` | Maximum attempts for transient failures (network, 5xx, 429). |
 | `NEWSDATA_RETRY_BACKOFF` | `2.0` | Base for exponential backoff (`base * 2^(attempt-1)`). Seconds. |
 | `NEWSDATA_RETRY_BACKOFF_MAX` | `60.0` | Cap on a single retry sleep, seconds. |
+| `NEWSDATA_WS_URL` | `wss://ws.newsdata.io/ws/event` | Real-time endpoint used by `stream_news`. |
+| `NEWSDATA_WS_MAX_WAIT` | `120` | Ceiling on `stream_news`'s `wait_seconds`, in seconds. |
 | `NEWSDATA_INTEGRATION_KEY` | _(unset)_ | Used only by `pytest -m integration`. Without it, live-API tests skip. |
 
 All values are read at module import time; restart the server after changing them.
@@ -160,8 +162,75 @@ Then in **ChatGPT → Settings → Connectors → Add custom connector**, regist
 | `get_news_counts` | `/api/1/count` | Aggregate article counts over a date range (`hour` / `day` buckets or single `all` total) |
 | `get_crypto_counts` | `/api/1/crypto/count` | Aggregate crypto article counts over a date range |
 | `get_market_counts` | `/api/1/market/count` | Aggregate market article counts over a date range |
+| `register_realtime_query` | `/api/1/websocket/register` | Register a standing real-time query, returns a `registration_id` |
+| `list_realtime_queries` | `/api/1/websocket/fetch` | List the account's registered real-time queries |
+| `delete_realtime_query` | `/api/1/websocket/delete` | Delete a registered real-time query |
+| `stream_news` | `wss://ws.newsdata.io/ws/event` | Collect real-time articles for a registered query ([below](#real-time-news-websocket)) |
 
-All tools are read-only and idempotent; the MCP-protocol annotations let compatible clients (Claude Code, MCP Inspector, etc.) cache and parallelize calls.
+The eight REST news tools are read-only and idempotent; the MCP-protocol annotations let compatible clients (Claude Code, MCP Inspector, etc.) cache and parallelize calls. `register_realtime_query` and `delete_realtime_query` are annotated as mutating (the latter destructive), since they create and remove server-side state.
+
+---
+
+## Real-time news (WebSocket)
+
+Real time is a **two-step flow**: register a standing query once, then collect
+from it as often as you like.
+
+```text
+register_realtime_query(
+  q="bitcoin",
+  language="en"
+)
+→ registration_id: a1b2c3d4e5f6
+```
+
+```text
+stream_news(
+  registration_id="a1b2c3d4e5f6",
+  max_articles=10,
+  wait_seconds=30
+)
+```
+
+`register_realtime_query` takes the familiar filter parameters (`q`, `country`,
+`language`, `domain`, …). There are **no date or paging filters** — a registered
+query matches news as it is published. Registering identical filters twice
+answers `Error (HTTP 409)`; call `list_realtime_queries` first to recover the
+existing id.
+
+### Why `stream_news` is bounded
+
+MCP tools are request/response, so an open-ended stream cannot be a tool.
+`stream_news` listens on a live connection and returns as soon as **either**
+`max_articles` have arrived **or** `wait_seconds` elapses — whichever comes
+first. It always returns within `wait_seconds`.
+
+Every reply states why it stopped, so the model can act on it:
+
+| `stopped_because` | Meaning |
+|---|---|
+| `max_articles` | Hit the cap — there may be more waiting |
+| `timeout` | The window elapsed; a `0` count means the feed was simply quiet |
+| `connection_closed` | The server ended the feed; returns whatever was collected |
+
+Call it again to keep listening — the registration stays alive between calls.
+An empty result is normal for a narrow query and does **not** mean anything
+failed.
+
+Bounds: `max_articles` is clamped to 1–50, `wait_seconds` to 1–`NEWSDATA_WS_MAX_WAIT`
+(120 by default).
+
+The server always accepts the handshake and then closes with code **1008** when
+the connection is refused, carrying one of three reasons: `invalid credentials
+or registration not found`, `api limit reached`, or `device limit reached` (more
+than 5 devices on one `registration_id`). Those return an `Error` and are not
+retried. Every other close code — including `1013` (`send timeout`) — is
+transient and surfaces as `stopped_because: connection_closed` with whatever was
+collected.
+
+> **Cost.** Each delivered article consumes **1 API credit per connected
+> device**. A broad query over a long window can burn credits quickly — keep
+> `max_articles` no higher than you need.
 
 ---
 
@@ -247,6 +316,8 @@ Notes on parameter shapes:
 - Free plan results are delayed relative to paid plans.
 - Result `size` is capped by plan tier: commonly 10 results on free, up to 50 on paid plans.
 - The count endpoints return aggregate buckets (one per `interval` slot) rather than article content.
+- Real-time coverage needs a plan with WebSocket access; without it `stream_news` returns `Error: invalid credentials or registration not found`.
+- Real-time articles are billed per delivered article, per connected device.
 - Every tool returns plain text (the MCP-protocol return type). Errors come back as `Error (HTTP 4xx): …` with the status code and a friendly message; HTTP 429 errors include a `retry after Ns` hint when the upstream `Retry-After` header was parseable.
 
 Full API reference: [https://newsdata.io/documentation](https://newsdata.io/documentation). Machine-readable contract: [OpenAPI 3.1 spec](https://newsdata.io/openapi.json).

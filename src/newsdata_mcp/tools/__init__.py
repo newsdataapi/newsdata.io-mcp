@@ -14,6 +14,7 @@ from . import (  # noqa: F401 — registers tools
     latest,
     market,
     market_count,
+    realtime,
     sources,
 )
 
@@ -25,5 +26,6 @@ __all__ = [
     "latest",
     "market",
     "market_count",
+    "realtime",
     "sources",
 ]

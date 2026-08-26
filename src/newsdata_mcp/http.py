@@ -179,7 +179,7 @@ async def close_client() -> None:
 
 
 async def _request_once(
-    endpoint: str, clean: dict[str, Any]
+    endpoint: str, clean: dict[str, Any], method: str = "GET"
 ) -> tuple[dict[str, Any], bool]:
     """Execute one HTTP attempt.
 
@@ -191,7 +191,8 @@ async def _request_once(
     response: httpx.Response | None = None
     try:
         client = await _get_client()
-        response = await client.get(
+        response = await client.request(
+            method,
             f"{NEWSDATA_BASE_URL}/{endpoint}",
             params=clean,
         )
@@ -307,7 +308,9 @@ async def _request_once(
         )
 
 
-async def fetch(endpoint: str, params: dict[str, Any]) -> dict[str, Any]:
+async def fetch(
+    endpoint: str, params: dict[str, Any], method: str = "GET"
+) -> dict[str, Any]:
     """Public entry point: one logical request, with retries.
 
     Permanent failures (auth, validation, soft errors, JSON decode,
@@ -324,7 +327,7 @@ async def fetch(endpoint: str, params: dict[str, Any]) -> dict[str, Any]:
         }
 
     clean = _normalize_params(params)
-    logger.info("Newsdata.io GET /%s (%d params)", endpoint, len(clean))
+    logger.info("Newsdata.io %s /%s (%d params)", method, endpoint, len(clean))
 
     last_envelope: dict[str, Any] = {
         "status": "error",
@@ -332,7 +335,7 @@ async def fetch(endpoint: str, params: dict[str, Any]) -> dict[str, Any]:
         "status_code": None,
     }
     for attempt in range(1, MAX_RETRIES + 1):
-        envelope, retryable = await _request_once(endpoint, clean)
+        envelope, retryable = await _request_once(endpoint, clean, method)
         if not retryable:
             return envelope
         last_envelope = envelope
