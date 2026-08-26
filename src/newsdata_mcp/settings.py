@@ -50,5 +50,26 @@ except (ValueError, TypeError):
     )
     RETRY_BACKOFF_MAX = 60.0
 
+# Real-time WebSocket endpoint used by the `stream_news` tool.
+NEWSDATA_WS_URL = os.getenv("NEWSDATA_WS_URL", "wss://ws.newsdata.io/ws/event")
+
+# The feed a registered query matches against.
+WS_NEWS_TYPE = "latest"
+
+# Close code the server uses for a permanent connection rejection.
+WS_POLICY_VIOLATION = 1008
+
+# Hard ceilings for `stream_news`, which must return within a tool call.
+try:
+    WS_MAX_WAIT_SECONDS = float(os.getenv("NEWSDATA_WS_MAX_WAIT", "120"))
+except (ValueError, TypeError):
+    warnings.warn(
+        "NEWSDATA_WS_MAX_WAIT must be a number; falling back to 120",
+        stacklevel=2,
+    )
+    WS_MAX_WAIT_SECONDS = 120.0
+
+WS_MAX_ARTICLES = 50
+
 if not NEWSDATA_API_KEY:
     warnings.warn("NEWSDATA_API_KEY is not set", stacklevel=2)

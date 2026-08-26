@@ -24,6 +24,25 @@ READ_ONLY_TOOL = ToolAnnotations(
     openWorldHint=True,
 )
 
+# Registering a real-time query creates server-side state. It is not
+# destructive (nothing is lost) and is idempotent in practice — a second
+# identical registration answers 409 with the existing id rather than
+# creating a duplicate.
+CREATE_TOOL = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=True,
+)
+
+# Deleting a registered query removes server-side state for good.
+DESTRUCTIVE_TOOL = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=True,
+    idempotentHint=True,
+    openWorldHint=True,
+)
+
 
 @asynccontextmanager
 async def _lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:

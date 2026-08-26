@@ -255,3 +255,91 @@ def format_sources(data: dict[str, Any]) -> str:
         lines.append("")
 
     return "\n".join(lines)
+
+
+def format_registration(data: dict[str, Any]) -> str:
+    """Render a `websocket/register` response: the new query's
+    ``registration_id`` plus whatever else the server echoes back.
+    """
+    if data.get("status") != "success":
+        return _format_error(data)
+
+    results = (data.get("data", {}) or {}).get("results") or {}
+    if not isinstance(results, dict):
+        return "Registered, but the response carried no registration details."
+
+    lines = ["registered: yes"]
+    _append_field(lines, "registration_id", results.get("registration_id"))
+    for key, value in results.items():
+        if key == "registration_id":
+            continue
+        _append_field(lines, key, value)
+    return "\n".join(lines)
+
+
+def format_registered_queries(data: dict[str, Any]) -> str:
+    """Render a `websocket/fetch` response: one block per registered
+    real-time query.
+    """
+    if data.get("status") != "success":
+        return _format_error(data)
+
+    results = (data.get("data", {}) or {}).get("results") or {}
+    queries = results.get("queries") if isinstance(results, dict) else None
+    if not queries:
+        return "No real-time queries are registered on this account."
+
+    lines = [f"registered_queries: {len(queries)}", ""]
+    for index, query in enumerate(queries, 1):
+        lines.append(f"Query {index}:")
+        if isinstance(query, dict):
+            _append_field(lines, "registration_id", query.get("registration_id"))
+            for key, value in query.items():
+                if key == "registration_id":
+                    continue
+                _append_field(lines, key, value)
+        else:
+            _append_field(lines, "value", query)
+        lines.append("")
+    return "\n".join(lines)
+
+
+def format_deletion(data: dict[str, Any], registration_id: str) -> str:
+    """Render a `websocket/delete` response."""
+    if data.get("status") != "success":
+        return _format_error(data)
+    return f"deleted: yes\nregistration_id: {registration_id}"
+
+
+def format_stream(
+    articles: list[dict[str, Any]],
+    registration_id: str,
+    stopped_because: str,
+    waited_seconds: float,
+) -> str:
+    """Render the articles collected by a bounded `stream_news` call.
+
+    ``stopped_because`` explains why collection ended (``max_articles``,
+    ``timeout``, or ``connection_closed``) so the model can tell "the
+    feed is quiet" from "I hit the cap and there may be more".
+    """
+    header = [
+        f"registration_id: {registration_id}",
+        f"collected_articles: {len(articles)}",
+        f"stopped_because: {stopped_because}",
+        f"waited_seconds: {round(waited_seconds, 1)}",
+    ]
+    if not articles:
+        header.append("")
+        header.append(
+            "No matching articles were published during this window. "
+            "The query is still registered — call again to keep listening."
+        )
+        return "\n".join(header)
+
+    lines = [*header, ""]
+    for index, article in enumerate(articles, 1):
+        lines.append(f"Article {index}:")
+        lines.extend(_format_article_item(article))
+        lines.append("")
+    return "\n".join(lines)
