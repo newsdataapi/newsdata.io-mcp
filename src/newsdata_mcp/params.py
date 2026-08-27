@@ -15,8 +15,11 @@ def _csv_pattern(*values: str) -> str:
     return rf"^(?:{choices})(?:,(?:{choices}))*$"
 
 
-# NewsData documents 17 category codes in its public endpoint docs/blogs.
+# The 18 category codes NewsData accepts, as returned by its own filter API.
+# Keep this in sync: the codes below become a regex on CATEGORY_FILTER, so a
+# missing one is rejected client-side and never reaches the API.
 CATEGORY_CODE = Literal[
+    "breaking",
     "business",
     "crime",
     "domestic",
@@ -45,9 +48,9 @@ CATEGORY_FILTER = Annotated[
             "Accepts either a list (preferred): `['technology', 'science']`, "
             "or a comma-separated string without spaces: `'technology,science'`. "
             "A single value also works as a plain string: `'technology'`. "
-            "Allowed values: business, crime, domestic, education, entertainment, "
-            "environment, food, health, lifestyle, other, politics, science, "
-            "sports, technology, top, tourism, world."
+            "Allowed values: breaking, business, crime, domestic, education, "
+            "entertainment, environment, food, health, lifestyle, other, "
+            "politics, science, sports, technology, top, tourism, world."
         ),
         examples=["technology", ["technology", "science"], "business,world"],
     ),
