@@ -13,7 +13,9 @@ Retry policy:
 - HTTP 5xx → retry with exponential backoff.
 - HTTP 429 → retry, honoring ``Retry-After`` (integer seconds or
   HTTP-date per RFC 7231) when parseable; falling back to exponential
-  backoff otherwise.
+  backoff otherwise. The exception is a 429 whose error code means the
+  account's API credits are exhausted — retrying cannot conjure more
+  credits, so that is a permanent failure.
 - HTTP 401/403/422/other 4xx, non-JSON 2xx, soft 200 errors → permanent
   failure, never retried.
 
@@ -41,6 +43,7 @@ from .settings import (
     MAX_RETRIES,
     NEWSDATA_API_KEY,
     NEWSDATA_BASE_URL,
+    QUOTA_EXHAUSTED_CODES,
     REQUEST_TIMEOUT,
     RETRY_BACKOFF,
     RETRY_BACKOFF_MAX,
@@ -178,6 +181,21 @@ async def close_client() -> None:
             _client = None
 
 
+def _quota_exhausted(response: httpx.Response) -> bool:
+    """Whether a 429 body carries an error code meaning the account is out of
+    API credits, as opposed to a transient rate limit."""
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+    if not isinstance(body, dict):
+        return False
+    results = body.get("results")
+    if not isinstance(results, dict):
+        return False
+    return results.get("code") in QUOTA_EXHAUSTED_CODES
+
+
 async def _request_once(
     endpoint: str, clean: dict[str, Any], method: str = "GET"
 ) -> tuple[dict[str, Any], bool]:
@@ -261,14 +279,22 @@ async def _request_once(
                 False,
             )
         if code == 429:
+            # A 429 covers a burst limit, a rate limit, and exhausted API
+            # credits. Only the first two are worth retrying.
+            exhausted = _quota_exhausted(e.response)
             envelope: dict[str, Any] = {
                 "status": "error",
-                "message": "Rate limit exceeded. Try again later.",
+                "message": (
+                    "API credits exhausted for this key. Retrying will not "
+                    "help; upgrade the plan or wait for the quota to reset."
+                    if exhausted
+                    else "Rate limit exceeded. Try again later."
+                ),
                 "status_code": code,
             }
             if retry_after is not None:
                 envelope["retry_after"] = retry_after
-            return envelope, True
+            return envelope, not exhausted
 
         body = (e.response.text or "").strip()
         if len(body) > 500:
