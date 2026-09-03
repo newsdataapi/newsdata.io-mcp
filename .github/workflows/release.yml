@@ -67,8 +67,13 @@ jobs:
           name: dist
           path: dist/
 
+      # PyPI rejects a version that already exists, so a re-run of this
+      # workflow would fail on a release that published perfectly well.
+      # skip-existing turns that into a no-op.
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
 
   github-release:
     name: Create GitHub Release
