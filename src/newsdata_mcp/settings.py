@@ -50,6 +50,15 @@ except (ValueError, TypeError):
     )
     RETRY_BACKOFF_MAX = 60.0
 
+# Error codes on a 429 meaning the account's API credits are exhausted rather
+# than a transient rate limit. These are never retried — waiting out the
+# backoff cannot conjure more credits.
+#
+# `ApiLimitExceeded` is the documented code (see the ErrorCode enum in
+# https://newsdata.io/openapi.json); `ApiKeyLimitExceeded` is accepted too
+# because the API has been observed to send it and the spec is not exhaustive.
+QUOTA_EXHAUSTED_CODES = frozenset({"ApiLimitExceeded", "ApiKeyLimitExceeded"})
+
 # Real-time WebSocket endpoint used by the `stream_news` tool.
 NEWSDATA_WS_URL = os.getenv("NEWSDATA_WS_URL", "wss://ws.newsdata.io/ws/event")
 
