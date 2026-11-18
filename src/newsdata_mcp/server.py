@@ -3,7 +3,7 @@
 Parses ``--transport`` (``stdio`` or ``streamable-http``), ``--host``,
 ``--port``, and ``--version``, then hands off to ``FastMCP.run``. The
 side-effect ``from . import tools`` triggers every `@mcp.tool()`
-decorator so all eight tools are registered before the server starts.
+decorator so every tool is registered before the server starts.
 """
 import argparse
 import logging

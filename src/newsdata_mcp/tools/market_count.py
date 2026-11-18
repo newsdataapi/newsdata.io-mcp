@@ -2,26 +2,29 @@ from .._mcp import READ_ONLY_TOOL, mcp
 from ..formatters import format_counts
 from ..http import fetch
 from ..params import (
+    BUCKET_SIZE,
     COUNTRY_FILTER,
     CREATOR_FILTER,
     DATATYPE_FILTER,
-    DATE_OR_DATETIME,
-    DOMAIN_FILTER,
-    DOMAIN_URL_FILTER,
-    FLAG,
+    FROM_DATE,
     INTERVAL,
     LANGUAGE_FILTER,
     MARKET_ID_FILTER,
     ORGANIZATION_FILTER,
     PAGE,
-    PRIORITY_DOMAIN,
+    PRESENCE_FLAG,
     QUERY,
+    QUERY_IN_META,
+    QUERY_IN_TITLE,
     REMOVE_DUPLICATE,
     SENTIMENT,
     SENTIMENT_SCORE,
-    SIZE,
-    SORT,
+    SORT_COUNT,
+    SOURCE_PRIORITY,
+    SOURCE_URL_FILTER,
     TAG_FILTER,
+    TIMEFRAME,
+    TO_DATE,
 )
 from ..validators import (
     check_mutex_groups,
@@ -29,109 +32,83 @@ from ..validators import (
 )
 
 
-@mcp.tool(annotations=READ_ONLY_TOOL)
+@mcp.tool(annotations=READ_ONLY_TOOL, structured_output=False)
 async def get_market_counts(
-    from_date: DATE_OR_DATETIME,
-    to_date: DATE_OR_DATETIME,
-    q: QUERY | None = None,
-    q_in_title: QUERY | None = None,
-    q_in_meta: QUERY | None = None,
-    country: COUNTRY_FILTER | None = None,
-    exclude_country: COUNTRY_FILTER | None = None,
-    domain: DOMAIN_FILTER | None = None,
-    domainurl: DOMAIN_URL_FILTER | None = None,
-    exclude_domain: DOMAIN_FILTER | None = None,
-    language: LANGUAGE_FILTER | None = None,
-    exclude_language: LANGUAGE_FILTER | None = None,
-    full_content: FLAG | None = None,
-    image: FLAG | None = None,
-    video: FLAG | None = None,
-    organization: ORGANIZATION_FILTER | None = None,
-    market_id: MARKET_ID_FILTER | None = None,
-    priority_domain: PRIORITY_DOMAIN | None = None,
-    page: PAGE | None = None,
-    sentiment: SENTIMENT | None = None,
-    removeduplicate: REMOVE_DUPLICATE | None = None,
-    size: SIZE | None = None,
-    sort: SORT | None = None,
-    tag: TAG_FILTER | None = None,
-    interval: INTERVAL | None = None,
-    creator: CREATOR_FILTER | None = None,
-    datatype: DATATYPE_FILTER | None = None,
-    sentiment_score: SENTIMENT_SCORE | None = None,
+    q: QUERY = None,
+    q_in_title: QUERY_IN_TITLE = None,
+    q_in_meta: QUERY_IN_META = None,
+    market_id: MARKET_ID_FILTER = None,
+    country: COUNTRY_FILTER = None,
+    exclude_country: COUNTRY_FILTER = None,
+    language: LANGUAGE_FILTER = None,
+    exclude_language: LANGUAGE_FILTER = None,
+    source_url: SOURCE_URL_FILTER = None,
+    exclude_source_url: SOURCE_URL_FILTER = None,
+    source_priority: SOURCE_PRIORITY = None,
+    from_date: FROM_DATE = None,
+    to_date: TO_DATE = None,
+    timeframe: TIMEFRAME = None,
+    interval: INTERVAL = None,
+    image: PRESENCE_FLAG = None,
+    video: PRESENCE_FLAG = None,
+    content: PRESENCE_FLAG = None,
+    remove_duplicate: REMOVE_DUPLICATE = None,
+    sentiment: SENTIMENT = None,
+    sentiment_score: SENTIMENT_SCORE = None,
+    tag: TAG_FILTER = None,
+    organization: ORGANIZATION_FILTER = None,
+    creator: CREATOR_FILTER = None,
+    datatype: DATATYPE_FILTER = None,
+    size: BUCKET_SIZE = None,
+    page: PAGE = None,
+    sort: SORT_COUNT = None,
 ) -> str:
     """
-    Use this tool to fetch AGGREGATE MARKET/FINANCIAL ARTICLE COUNTS over
-    a date range. With `interval="hour"` or `"day"` returns per-bucket
-    counts; with `interval="all"` (or when `interval` is omitted) returns
-    a single aggregate count for the range.
+    COUNT how many STOCK-MARKET NEWS articles match a search, as a total plus one count per month,
+    day or hour. Returns numbers only, no articles: to read articles use `get_market_news`.
+    COSTS 50 CREDITS PER CALL (and per page) and needs a paid plan. Call it only when the user
+    asks for counts, volumes or trends, never to check whether articles exist.
 
-    For actual market article content, use `get_market_news` instead.
+    The result has `total_results` (all matching articles in the whole date range) and one
+    `date_time,count` line per bucket; `date_time` is the start of the bucket in UTC.
+
+    Time window (pass dates, or `timeframe`, or neither):
+    - Neither: the last 30 days.
+    - `from_date` / `to_date`: a date range in UTC, as far back as the plan's history.
+    - `timeframe`: the last N hours or minutes.
 
     Strict rules (this tool returns Error before any API call if violated):
     - Use only ONE of `q`, `q_in_title`, or `q_in_meta`.
     - Do NOT combine `country` with `exclude_country`.
     - Do NOT combine `language` with `exclude_language`.
-    - Do NOT combine `domain`, `domainurl`, and/or `exclude_domain` with each other.
+    - Do NOT combine `source_url` with `exclude_source_url`.
     - `sentiment_score` requires `sentiment` to also be set.
 
-    Other guidance:
-    - `from_date` and `to_date` are REQUIRED.
-    - Date format: `YYYY-MM-DD` or `YYYY-MM-DD HH:MM:SS`.
-    - `category` is NOT available on this endpoint.
-    - `interval` chooses the bucket size: `hour` (per-hour buckets), `day`
-      (per-day buckets), or `all` (single aggregate total, no buckets).
-    - `sentiment_score` is a minimum confidence percentage (0–100) for the chosen
-      `sentiment` label, e.g. `sentiment="positive", sentiment_score=70` filters
-      the count to articles whose positive-sentiment score is at least 70.
-    - Use `market_id` and/or `organization` to narrow to specific tickers / companies.
+    Other guidance (checked by the API; its error message names the fix):
+    - `market_id` filters by stock listing id such as `aapl-us-vy`, not by bare ticker. To find an id,
+      call `get_market_news` first and read `market_id` from its results.
+    - `interval` sets the bucket length: `month`, `day` (default) or `hour`. For the total alone, read
+      `total_results`; there is no `all` interval.
+    - Do NOT combine `timeframe` with `from_date` or `to_date`.
+    - `size` is the number of buckets per page. More buckets: pass `next_page` as `page` with the same
+      other arguments (another 50 credits).
 
     Examples:
-    - `from_date="2024-01-01", to_date="2024-01-31", market_id="AAPL", interval="day"`
-      → daily Apple counts in January.
-    - `from_date="2024-01-01", to_date="2024-03-31", interval="hour", organization=["tesla", "nvidia"]`
-      → hourly Tesla+NVIDIA counts for Q1.
-    - `from_date="2024-01-01", to_date="2024-12-31", interval="all", country="us", sentiment="positive"`
-      → a single aggregate count of bullish US market articles for the year.
+    - `market_id="aapl-us-vy"` → daily counts for the last 30 days
+    - `market_id="aapl-us-vy", from_date="2026-09-01", to_date="2026-09-30"`
+    - `q="earnings", country="us", interval="month", from_date="2026-01-01"`
     """
+    # Parameter names are the API's own names, so the arguments are the query
+    # parameters. Keep this the first statement: `locals()` must hold only the
+    # arguments.
+    params = dict(locals())
+
     error = (
-        check_mutex_groups(locals())
-        or check_sentiment_score_requires_sentiment(locals())
+        check_mutex_groups(params)
+        or check_sentiment_score_requires_sentiment(params)
     )
     if error:
         return f"Error: {error}"
 
-    data = await fetch(
-        "market/count",
-        {
-            "from_date": from_date,
-            "to_date": to_date,
-            "q": q,
-            "qintitle": q_in_title,
-            "qinmeta": q_in_meta,
-            "country": country,
-            "excludecountry": exclude_country,
-            "domain": domain,
-            "domainurl": domainurl,
-            "excludedomain": exclude_domain,
-            "language": language,
-            "excludelanguage": exclude_language,
-            "full_content": full_content,
-            "image": image,
-            "video": video,
-            "organization": organization,
-            "market_id": market_id,
-            "prioritydomain": priority_domain,
-            "page": page,
-            "sentiment": sentiment,
-            "removeduplicate": removeduplicate,
-            "size": size,
-            "sort": sort,
-            "tag": tag,
-            "interval": interval,
-            "creator": creator,
-            "datatype": datatype,
-            "sentiment_score": sentiment_score,
-        },
-    )
-    return format_counts(data, "market/count")
+    data = await fetch("count/market", params)
+    return format_counts(data, "count/market")

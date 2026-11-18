@@ -12,23 +12,23 @@ from newsdata_mcp import http
 
 @respx.mock
 async def test_fetch_success_wraps_payload():
-    respx.get("https://newsdata.io/api/1/latest").mock(
+    respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(
             200,
-            json={"status": "success", "totalResults": 1, "results": [{"article_id": "x"}]},
+            json={"status": "success", "total_results": 1, "results": [{"id": "x"}]},
         )
     )
-    result = await http.fetch("latest", {"q": "test"})
+    result = await http.fetch("news", {"q": "test"})
     assert result["status"] == "success"
-    assert result["data"]["results"][0]["article_id"] == "x"
+    assert result["data"]["results"][0]["id"] == "x"
 
 
 @respx.mock
 async def test_fetch_drops_none_params():
-    route = respx.get("https://newsdata.io/api/1/latest").mock(
+    route = respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(200, json={"status": "success", "results": []})
     )
-    await http.fetch("latest", {"q": "btc", "country": None, "size": 5})
+    await http.fetch("news", {"q": "btc", "country": None, "size": 5})
     request = route.calls[0].request
     qs = dict(request.url.params)
     assert qs == {"q": "btc", "size": "5"}
@@ -36,39 +36,39 @@ async def test_fetch_drops_none_params():
 
 @respx.mock
 async def test_fetch_401_friendly_message():
-    respx.get("https://newsdata.io/api/1/latest").mock(
+    respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(401, text="Unauthorized")
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert result["status"] == "error"
     assert result["message"] == "Unauthorized. API key is invalid."
 
 
 @respx.mock
 async def test_fetch_422_friendly_message():
-    respx.get("https://newsdata.io/api/1/latest").mock(
+    respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(422, text="Bad")
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert "Invalid parameters" in result["message"]
 
 
 @respx.mock
 async def test_fetch_429_friendly_message():
-    respx.get("https://newsdata.io/api/1/latest").mock(
+    respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(429, text="Too many")
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert "Rate limit" in result["message"]
 
 
 @respx.mock
 async def test_fetch_500_truncates_body():
     long_body = "X" * 10_000
-    respx.get("https://newsdata.io/api/1/latest").mock(
+    respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(500, text=long_body)
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert "HTTP 500" in result["message"]
     assert "…" in result["message"]
     # Prefix "HTTP 500 from Newsdata.io: " is 27 chars, body 500, ellipsis 1
@@ -77,88 +77,88 @@ async def test_fetch_500_truncates_body():
 
 @respx.mock
 async def test_fetch_short_5xx_body_not_truncated():
-    respx.get("https://newsdata.io/api/1/latest").mock(
+    respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(502, text="Bad Gateway")
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert result["message"] == "HTTP 502 from Newsdata.io: Bad Gateway"
 
 
 @respx.mock
 async def test_fetch_soft_error_results_message():
-    respx.get("https://newsdata.io/api/1/latest").mock(
+    respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(
             200,
             json={"status": "error", "results": {"code": "X", "message": "Soft fail"}},
         )
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert result["status"] == "error"
     assert result["message"] == "Soft fail"
 
 
 @respx.mock
 async def test_fetch_soft_error_top_level_message():
-    respx.get("https://newsdata.io/api/1/latest").mock(
+    respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(
             200,
             json={"status": "error", "message": "Top-level message"},
         )
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert result["message"] == "Top-level message"
 
 
 @respx.mock
 async def test_fetch_soft_error_unknown_falls_back():
-    respx.get("https://newsdata.io/api/1/latest").mock(
+    respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(200, json={"status": "error"})
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert result["message"] == "Unknown API error."
 
 
 @respx.mock
 async def test_fetch_non_json_response():
-    respx.get("https://newsdata.io/api/1/latest").mock(
+    respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(200, text="<html>not json</html>")
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert result["status"] == "error"
     assert "non-JSON" in result["message"]
 
 
 @respx.mock
 async def test_fetch_timeout():
-    respx.get("https://newsdata.io/api/1/latest").mock(
+    respx.get("https://newsdata.io/api/2/news").mock(
         side_effect=httpx.TimeoutException("timed out")
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert "timed out" in result["message"].lower()
 
 
 @respx.mock
 async def test_fetch_connect_error():
-    respx.get("https://newsdata.io/api/1/latest").mock(
+    respx.get("https://newsdata.io/api/2/news").mock(
         side_effect=httpx.ConnectError("nope")
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert "Failed to connect" in result["message"]
 
 
 async def test_fetch_missing_api_key_short_circuits(monkeypatch):
     monkeypatch.setattr(http, "NEWSDATA_API_KEY", None)
-    result = await http.fetch("latest", {"q": "anything"})
+    result = await http.fetch("news", {"q": "anything"})
     assert result["status"] == "error"
     assert "not configured" in result["message"]
 
 
 @respx.mock
 async def test_fetch_uses_header_auth_not_query_string():
-    route = respx.get("https://newsdata.io/api/1/latest").mock(
+    route = respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(200, json={"status": "success", "results": []})
     )
-    await http.fetch("latest", {"q": "x"})
+    await http.fetch("news", {"q": "x"})
     request = route.calls[0].request
     # Auth comes via header, NOT as `apikey=...` in the URL.
     assert request.headers["X-ACCESS-KEY"] == "test_key_not_real"
@@ -167,7 +167,7 @@ async def test_fetch_uses_header_auth_not_query_string():
 
 @respx.mock
 async def test_fetch_sets_user_agent_header():
-    route = respx.get("https://newsdata.io/api/1/sources").mock(
+    route = respx.get("https://newsdata.io/api/2/sources").mock(
         return_value=httpx.Response(200, json={"status": "success", "results": []})
     )
     await http.fetch("sources", {})
@@ -177,7 +177,7 @@ async def test_fetch_sets_user_agent_header():
 
 @respx.mock
 async def test_fetch_reuses_singleton_client():
-    respx.get("https://newsdata.io/api/1/sources").mock(
+    respx.get("https://newsdata.io/api/2/sources").mock(
         return_value=httpx.Response(200, json={"status": "success", "results": []})
     )
     await http.fetch("sources", {})
@@ -209,19 +209,19 @@ def test_normalize_bool_flag_false_to_zero():
     }
 
 
-def test_normalize_removeduplicate_true_to_one():
-    assert http._normalize_params({"removeduplicate": True}) == {"removeduplicate": 1}
+def test_normalize_remove_duplicate_true_to_one():
+    assert http._normalize_params({"remove_duplicate": True}) == {"remove_duplicate": 1}
 
 
-def test_normalize_removeduplicate_false_is_omitted():
-    """The API rejects `0`; we drop the key entirely so it's never sent."""
-    assert http._normalize_params({"removeduplicate": False}) == {}
+def test_normalize_remove_duplicate_false_is_omitted():
+    """`False` means "no filter"; we drop the key entirely so it is never sent."""
+    assert http._normalize_params({"remove_duplicate": False}) == {}
 
 
-def test_normalize_removeduplicate_false_alongside_other_params():
-    out = http._normalize_params({"q": "btc", "removeduplicate": False, "size": 5})
+def test_normalize_remove_duplicate_false_alongside_other_params():
+    out = http._normalize_params({"q": "btc", "remove_duplicate": False, "size": 5})
     assert out == {"q": "btc", "size": 5}
-    assert "removeduplicate" not in out
+    assert "remove_duplicate" not in out
 
 
 def test_normalize_list_joins_with_comma_no_spaces():
@@ -269,7 +269,7 @@ def test_normalize_mixed_inputs_realistic_call():
         "language": ["en"],
         "image": True,
         "video": False,
-        "removeduplicate": True,
+        "remove_duplicate": True,
         "size": 10,
         "timeframe": 6,
         "exclude_country": None,
@@ -280,7 +280,7 @@ def test_normalize_mixed_inputs_realistic_call():
         "language": "en",
         "image": 1,
         "video": 0,
-        "removeduplicate": 1,
+        "remove_duplicate": 1,
         "size": 10,
         "timeframe": 6,
     }
@@ -288,40 +288,40 @@ def test_normalize_mixed_inputs_realistic_call():
 
 @respx.mock
 async def test_fetch_sends_bool_true_as_one_on_wire():
-    route = respx.get("https://newsdata.io/api/1/latest").mock(
+    route = respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(200, json={"status": "success", "results": []})
     )
-    await http.fetch("latest", {"image": True})
+    await http.fetch("news", {"image": True})
     qs = dict(route.calls[0].request.url.params)
     assert qs["image"] == "1"
 
 
 @respx.mock
 async def test_fetch_sends_bool_false_as_zero_on_wire():
-    route = respx.get("https://newsdata.io/api/1/latest").mock(
+    route = respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(200, json={"status": "success", "results": []})
     )
-    await http.fetch("latest", {"image": False})
+    await http.fetch("news", {"image": False})
     qs = dict(route.calls[0].request.url.params)
     assert qs["image"] == "0"
 
 
 @respx.mock
-async def test_fetch_removeduplicate_false_not_on_wire():
-    route = respx.get("https://newsdata.io/api/1/latest").mock(
+async def test_fetch_remove_duplicate_false_not_on_wire():
+    route = respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(200, json={"status": "success", "results": []})
     )
-    await http.fetch("latest", {"removeduplicate": False})
+    await http.fetch("news", {"remove_duplicate": False})
     qs = dict(route.calls[0].request.url.params)
-    assert "removeduplicate" not in qs
+    assert "remove_duplicate" not in qs
 
 
 @respx.mock
 async def test_fetch_list_joined_with_comma_on_wire():
-    route = respx.get("https://newsdata.io/api/1/latest").mock(
+    route = respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(200, json={"status": "success", "results": []})
     )
-    await http.fetch("latest", {"country": ["us", "gb", "in"]})
+    await http.fetch("news", {"country": ["us", "gb", "in"]})
     qs = dict(route.calls[0].request.url.params)
     assert qs["country"] == "us,gb,in"
 
@@ -410,39 +410,39 @@ def test_compute_backoff_capped(monkeypatch):
 @respx.mock
 async def test_retry_recovers_after_500_then_200():
     """First call returns 500; second returns 200. fetch() returns success."""
-    route = respx.get("https://newsdata.io/api/1/latest").mock(
+    route = respx.get("https://newsdata.io/api/2/news").mock(
         side_effect=[
             httpx.Response(503, text="upstream is down"),
             httpx.Response(200, json={"status": "success", "results": []}),
         ]
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert result["status"] == "success"
     assert route.call_count == 2
 
 
 @respx.mock
 async def test_retry_recovers_after_timeout_then_200():
-    route = respx.get("https://newsdata.io/api/1/latest").mock(
+    route = respx.get("https://newsdata.io/api/2/news").mock(
         side_effect=[
             httpx.TimeoutException("first call hung"),
             httpx.Response(200, json={"status": "success", "results": []}),
         ]
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert result["status"] == "success"
     assert route.call_count == 2
 
 
 @respx.mock
 async def test_retry_recovers_after_connect_error_then_200():
-    route = respx.get("https://newsdata.io/api/1/latest").mock(
+    route = respx.get("https://newsdata.io/api/2/news").mock(
         side_effect=[
             httpx.ConnectError("dns failure"),
             httpx.Response(200, json={"status": "success", "results": []}),
         ]
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert result["status"] == "success"
     assert route.call_count == 2
 
@@ -453,10 +453,10 @@ async def test_retry_recovers_after_connect_error_then_200():
 async def test_retry_exhausted_on_5xx_returns_last_error(monkeypatch):
     """All MAX_RETRIES attempts get 5xx; final result includes status_code."""
     monkeypatch.setattr(http, "MAX_RETRIES", 3)
-    respx.get("https://newsdata.io/api/1/latest").mock(
+    respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(503, text="still down")
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert result["status"] == "error"
     assert result["status_code"] == 503
     assert "HTTP 503" in result["message"]
@@ -466,10 +466,10 @@ async def test_retry_exhausted_on_5xx_returns_last_error(monkeypatch):
 
 @respx.mock
 async def test_401_no_retry():
-    route = respx.get("https://newsdata.io/api/1/latest").mock(
+    route = respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(401, text="bad key")
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert result["status"] == "error"
     assert result["status_code"] == 401
     # Permanent failure: exactly one call, not MAX_RETRIES.
@@ -478,10 +478,10 @@ async def test_401_no_retry():
 
 @respx.mock
 async def test_422_no_retry():
-    route = respx.get("https://newsdata.io/api/1/latest").mock(
+    route = respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(422, text="bad params")
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert result["status"] == "error"
     assert result["status_code"] == 422
     assert route.call_count == 1
@@ -489,10 +489,10 @@ async def test_422_no_retry():
 
 @respx.mock
 async def test_other_4xx_no_retry():
-    route = respx.get("https://newsdata.io/api/1/latest").mock(
+    route = respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(404, text="not found")
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert result["status"] == "error"
     assert result["status_code"] == 404
     assert route.call_count == 1
@@ -501,10 +501,10 @@ async def test_other_4xx_no_retry():
 @respx.mock
 async def test_non_json_2xx_no_retry():
     """Non-JSON 200 is treated as permanent (some maintenance pages)."""
-    route = respx.get("https://newsdata.io/api/1/latest").mock(
+    route = respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(200, text="<html>maintenance</html>")
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert result["status"] == "error"
     assert "non-JSON" in result["message"]
     assert route.call_count == 1
@@ -514,13 +514,13 @@ async def test_non_json_2xx_no_retry():
 async def test_soft_error_200_no_retry():
     """200 OK with status=error is a user-side issue (e.g. bad date).
     No retry; status_code captured as 200."""
-    route = respx.get("https://newsdata.io/api/1/latest").mock(
+    route = respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(
             200,
             json={"status": "error", "results": {"message": "Bad date"}},
         )
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert result["status"] == "error"
     assert result["status_code"] == 200
     assert result["message"] == "Bad date"
@@ -532,13 +532,13 @@ async def test_soft_error_200_no_retry():
 @respx.mock
 async def test_429_with_retry_after_integer_honored():
     """429 first, then 200. Retry-After=0 lets the test fly past the sleep."""
-    route = respx.get("https://newsdata.io/api/1/latest").mock(
+    route = respx.get("https://newsdata.io/api/2/news").mock(
         side_effect=[
             httpx.Response(429, headers={"Retry-After": "0"}, text="too many"),
             httpx.Response(200, json={"status": "success", "results": []}),
         ]
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert result["status"] == "success"
     assert route.call_count == 2
 
@@ -556,10 +556,10 @@ async def test_429_exhausted_includes_retry_after_in_envelope(monkeypatch):
 
     monkeypatch.setattr(_asyncio, "sleep", _no_sleep)
     monkeypatch.setattr(http, "MAX_RETRIES", 2)
-    respx.get("https://newsdata.io/api/1/latest").mock(
+    respx.get("https://newsdata.io/api/2/news").mock(
         return_value=httpx.Response(429, headers={"Retry-After": "30"}, text="too many")
     )
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert result["status"] == "error"
     assert result["status_code"] == 429
     assert result["retry_after"] == 30
@@ -580,8 +580,8 @@ async def test_error_envelope_carries_status_code(monkeypatch):
         (httpx.Response(503, text="x"), 503),
     ]
     for response, expected_code in cases:
-        respx.get("https://newsdata.io/api/1/latest").mock(return_value=response)
-        result = await http.fetch("latest", {})
+        respx.get("https://newsdata.io/api/2/news").mock(return_value=response)
+        result = await http.fetch("news", {})
         assert result["status_code"] == expected_code, (
             f"expected status_code {expected_code}, got {result.get('status_code')}"
         )
@@ -590,7 +590,269 @@ async def test_error_envelope_carries_status_code(monkeypatch):
 
 async def test_missing_api_key_envelope_shape(monkeypatch):
     monkeypatch.setattr(http, "NEWSDATA_API_KEY", None)
-    result = await http.fetch("latest", {})
+    result = await http.fetch("news", {})
     assert result["status"] == "error"
     assert result["status_code"] is None
     assert "not configured" in result["message"]
+
+
+# ---------------------------------------------------------------------------
+# Blank values are dropped, error bodies are passed on, and a 429
+# that means "credits used up" is not retried.
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_blank_string_is_omitted():
+    """Some models send "" for a parameter they do not use; the API
+    answers an empty value with 422, so it is dropped like None."""
+    assert http._normalize_params({"q": "", "country": "   ", "language": "en"}) == {
+        "language": "en"
+    }
+
+
+@respx.mock
+async def test_fetch_sends_accept_language_en():
+    """The API translates error codes and plan notices for other
+    languages; the retry policy and the formatters rely on English."""
+    route = respx.get("https://newsdata.io/api/2/news").mock(
+        return_value=httpx.Response(200, json={"status": "success", "results": []})
+    )
+    await http.fetch("news", {})
+    assert route.calls[0].request.headers["Accept-Language"] == "en"
+
+
+@respx.mock
+async def test_fetch_count_endpoint_path():
+    route = respx.get("https://newsdata.io/api/2/count/news").mock(
+        return_value=httpx.Response(200, json={"status": "success", "total_results": 0, "results": []})
+    )
+    result = await http.fetch("count/news", {"q": "x"})
+    assert route.called
+    assert result["status"] == "success"
+
+
+@respx.mock
+async def test_fetch_422_passes_api_message_code_and_recommendations():
+    respx.get("https://newsdata.io/api/2/news").mock(
+        return_value=httpx.Response(
+            422,
+            json={
+                "status": "error",
+                "results": {
+                    "message": 'The country "usa" doesn\'t exist in our database.',
+                    "code": "UnsupportedFilter",
+                    "invalid_country": "usa",
+                    "recommendations": {"usa": [{"code": "us", "name": "united states of america"}]},
+                },
+            },
+        )
+    )
+    result = await http.fetch("news", {"country": "usa"})
+    assert result["status"] == "error"
+    assert result["status_code"] == 422
+    assert result["message"] == 'The country "usa" doesn\'t exist in our database.'
+    assert result["error_code"] == "UnsupportedFilter"
+    assert result["recommendations"] == {
+        "usa": [{"code": "us", "name": "united states of america"}]
+    }
+
+
+@respx.mock
+async def test_fetch_401_passes_api_message():
+    respx.get("https://newsdata.io/api/2/news").mock(
+        return_value=httpx.Response(
+            401,
+            json={
+                "status": "error",
+                "results": {"message": "The provided API key is not valid.", "code": "Unauthorized"},
+            },
+        )
+    )
+    result = await http.fetch("news", {})
+    assert result["status_code"] == 401
+    assert result["message"] == "The provided API key is not valid."
+    assert result["error_code"] == "Unauthorized"
+
+
+@respx.mock
+async def test_fetch_403_passes_api_message_and_is_not_retried():
+    route = respx.get("https://newsdata.io/api/2/count/news").mock(
+        return_value=httpx.Response(
+            403,
+            json={
+                "status": "error",
+                "results": {
+                    "message": "Access denied! You need to upgrade your plan in order to access the count endpoint.",
+                    "code": "AccessDenied",
+                },
+            },
+        )
+    )
+    result = await http.fetch("count/news", {"q": "x"})
+    assert result["status_code"] == 403
+    assert result["error_code"] == "AccessDenied"
+    assert "upgrade your plan" in result["message"]
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_error_body_without_results_object_uses_fallback_message():
+    """JSON, but not a NewsData error object: nothing to pass on."""
+    respx.get("https://newsdata.io/api/2/news").mock(
+        return_value=httpx.Response(422, json={"detail": "nope"})
+    )
+    result = await http.fetch("news", {})
+    assert "Invalid parameters" in result["message"]
+    assert "error_code" not in result
+    assert "recommendations" not in result
+
+
+@respx.mock
+async def test_fetch_soft_error_keeps_error_code():
+    respx.get("https://newsdata.io/api/2/news").mock(
+        return_value=httpx.Response(
+            200,
+            json={"status": "error", "results": {"code": "MalformedQuery", "message": "Bad syntax"}},
+        )
+    )
+    result = await http.fetch("news", {})
+    assert result["status_code"] == 200
+    assert result["message"] == "Bad syntax"
+    assert result["error_code"] == "MalformedQuery"
+
+
+@respx.mock
+async def test_429_credits_used_up_is_not_retried():
+    """`ApiLimitExceeded` means the account has no credits left. Waiting
+    a few seconds cannot fix that, so the call fails at once."""
+    route = respx.get("https://newsdata.io/api/2/news").mock(
+        return_value=httpx.Response(
+            429,
+            json={
+                "status": "error",
+                "results": {
+                    "message": "You have exceeded your assigned API credits.",
+                    "code": "ApiLimitExceeded",
+                },
+            },
+        )
+    )
+    result = await http.fetch("news", {})
+    assert result["status"] == "error"
+    assert result["status_code"] == 429
+    assert result["error_code"] == "ApiLimitExceeded"
+    assert result["message"] == "You have exceeded your assigned API credits."
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_429_api_key_credit_limit_is_not_retried():
+    route = respx.get("https://newsdata.io/api/2/news").mock(
+        return_value=httpx.Response(
+            429,
+            json={
+                "status": "error",
+                "results": {"message": "Key credit limit reached.", "code": "ApiKeyLimitExceeded"},
+            },
+        )
+    )
+    result = await http.fetch("news", {})
+    assert result["error_code"] == "ApiKeyLimitExceeded"
+    assert route.call_count == 1
+
+
+@respx.mock
+async def test_429_rate_limit_code_is_retried():
+    """`RateLimitExceeded` is the "slow down" 429: it is retried."""
+    route = respx.get("https://newsdata.io/api/2/news").mock(
+        side_effect=[
+            httpx.Response(
+                429,
+                json={
+                    "status": "error",
+                    "results": {"message": "Rate limit exceeded.", "code": "RateLimitExceeded"},
+                },
+            ),
+            httpx.Response(200, json={"status": "success", "results": []}),
+        ]
+    )
+    result = await http.fetch("news", {})
+    assert result["status"] == "success"
+    assert route.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# A rate-limit 429 whose Retry-After is longer than RETRY_BACKOFF_MAX is
+# returned at once. The API's rate window can be many minutes away, and a
+# tool call that sleeps that long looks dead to the model.
+# ---------------------------------------------------------------------------
+
+
+def _record_sleeps(monkeypatch) -> list[float]:
+    """Replace asyncio.sleep with a recorder and return the list it fills.
+    (The event loop's own zero-second sleeps may land in it too.)"""
+    import asyncio as _asyncio
+
+    slept: list[float] = []
+
+    async def _no_sleep(seconds):
+        slept.append(seconds)
+
+    monkeypatch.setattr(_asyncio, "sleep", _no_sleep)
+    return slept
+
+
+RATE_LIMITED = {
+    "status": "error",
+    "results": {"message": "Rate limit exceeded. Please try your request again later.", "code": "RateLimitExceeded"},
+}
+
+
+@respx.mock
+async def test_429_with_long_retry_after_is_returned_at_once(monkeypatch):
+    slept = _record_sleeps(monkeypatch)
+    monkeypatch.setattr(http, "RETRY_BACKOFF_MAX", 60.0)
+    route = respx.get("https://newsdata.io/api/2/news").mock(
+        return_value=httpx.Response(429, headers={"Retry-After": "739"}, json=RATE_LIMITED)
+    )
+    result = await http.fetch("news", {})
+    assert result["status"] == "error"
+    assert result["status_code"] == 429
+    assert result["error_code"] == "RateLimitExceeded"
+    assert result["retry_after"] == 739
+    assert result["message"].startswith("Rate limit exceeded.")
+    # One request, and no long sleep.
+    assert route.call_count == 1
+    assert all(seconds < 1 for seconds in slept)
+
+
+@respx.mock
+async def test_429_with_short_retry_after_is_waited_and_retried(monkeypatch):
+    slept = _record_sleeps(monkeypatch)
+    monkeypatch.setattr(http, "RETRY_BACKOFF_MAX", 60.0)
+    route = respx.get("https://newsdata.io/api/2/news").mock(
+        side_effect=[
+            httpx.Response(429, headers={"Retry-After": "5"}, json=RATE_LIMITED),
+            httpx.Response(200, json={"status": "success", "results": []}),
+        ]
+    )
+    result = await http.fetch("news", {})
+    assert result["status"] == "success"
+    assert route.call_count == 2
+    assert 5.0 in slept
+
+
+@respx.mock
+async def test_429_retry_after_equal_to_the_cap_is_still_waited(monkeypatch):
+    slept = _record_sleeps(monkeypatch)
+    monkeypatch.setattr(http, "RETRY_BACKOFF_MAX", 60.0)
+    route = respx.get("https://newsdata.io/api/2/news").mock(
+        side_effect=[
+            httpx.Response(429, headers={"Retry-After": "60"}, json=RATE_LIMITED),
+            httpx.Response(200, json={"status": "success", "results": []}),
+        ]
+    )
+    result = await http.fetch("news", {})
+    assert result["status"] == "success"
+    assert route.call_count == 2
+    assert 60.0 in slept

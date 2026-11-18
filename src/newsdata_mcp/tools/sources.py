@@ -4,53 +4,39 @@ from ..http import fetch
 from ..params import (
     CATEGORY_FILTER,
     COUNTRY_FILTER,
-    DOMAIN_URL_FILTER,
     LANGUAGE_FILTER,
-    PRIORITY_DOMAIN,
+    SOURCE_PRIORITY,
+    SOURCE_URL_FILTER,
 )
-from ..validators import check_mutex_groups
 
 
-@mcp.tool(annotations=READ_ONLY_TOOL)
+@mcp.tool(annotations=READ_ONLY_TOOL, structured_output=False)
 async def get_news_sources(
-    country: COUNTRY_FILTER | None = None,
-    category: CATEGORY_FILTER | None = None,
-    language: LANGUAGE_FILTER | None = None,
-    priority_domain: PRIORITY_DOMAIN | None = None,
-    domainurl: DOMAIN_URL_FILTER | None = None,
+    country: COUNTRY_FILTER = None,
+    category: CATEGORY_FILTER = None,
+    language: LANGUAGE_FILTER = None,
+    source_priority: SOURCE_PRIORITY = None,
+    source_url: SOURCE_URL_FILTER = None,
 ) -> str:
     """
-    Use this tool to DISCOVER available news sources, not to fetch articles.
-    Use this when the user wants to:
-    - Find which sources are available for a country or language.
-    - Get source IDs to use in `domain` filter in other tools.
-    - Explore what categories a source covers.
+    List the NEWS SOURCES (publishers) NewsData.io collects from. This tool returns sources, not articles.
+    Use it to find which sources cover a country, language or category, or to check that a source exists.
 
-    Strict rules: none. All parameters are independent and optional.
+    Strict rules: none. All parameters are optional and can be combined.
 
     Other guidance:
-    - All parameters are optional — omit to get all available sources.
-    - Returns source metadata: id, url, priority, languages, countries, categories.
-    - Use the returned `source_id` values as input to `domain` in other tools.
-    - No pagination — returns all matching sources in one call.
+    - Returns at most 100 sources, best-ranked first, with no paging. When more than 100 match they are
+      picked at random, so add filters to find a specific source.
+    - A source must match every filter you pass; within one filter it may match any of the values.
+    - Use a returned source's `url` as `source_url` (or `exclude_source_url`) on the news tools.
+    - Each source shows name, url, priority (lower number = higher rank), languages, countries,
+      categories, description and article statistics.
+    - Cost: 1 credit per call.
 
     Examples:
-    - `country="in", language="hi"` → Hindi sources in India
-    - `category="technology", priority_domain="top"` → top tech sources
-    - `domainurl="reuters.com,bbc.com"` → check if specific domains are available
+    - `country="in", language="hi"`
+    - `category="technology", source_priority="top"`
+    - `source_url="bbc.com"`
     """
-    error = check_mutex_groups(locals())
-    if error:
-        return f"Error: {error}"
-
-    data = await fetch(
-        "sources",
-        {
-            "country": country,
-            "category": category,
-            "language": language,
-            "prioritydomain": priority_domain,
-            "domainurl": domainurl,
-        },
-    )
+    data = await fetch("sources", dict(locals()))
     return format_sources(data)

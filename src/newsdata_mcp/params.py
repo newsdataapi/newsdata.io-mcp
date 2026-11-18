@@ -1,137 +1,421 @@
 """Pydantic `Annotated` parameter types reused across the MCP tools.
 
-These aliases bundle a regex/length/range plus a `description` and
-`examples` so the resulting JSON Schema sent to MCP clients carries those
-hints. The aliases live in one place; tool signatures import the ones
-they need.
+Each alias carries the `description` that MCP clients show the model in the
+tool's JSON Schema. Names and meanings follow the NewsData.io API
+one-to-one: a tool parameter is always called what the API calls it.
+
+Three rules keep these schemas usable by any model:
+
+- Every alias is optional by itself: `None` is part of the type, and a tool
+  declares a parameter as `name: ALIAS = None`. Writing `ALIAS | None` in the
+  signature instead would make pydantic put the description inside one branch
+  of an `anyOf`; with `None` inside the alias the description sits at the top
+  of the property, where every client and model reads it.
+- Value checks stay with the API. There are no regex patterns or length
+  limits here: the API knows the real limits (several depend on the plan)
+  and answers a wrong value with a message and suggested values, which
+  `formatters._format_error` passes on. Only closed sets (`Literal`) and
+  plain numeric ranges are declared.
+- Shapes are lenient. Multi-value filters take a comma-separated string or
+  a list, flags take true/false or 1/0. `http._normalize_params` turns every
+  shape into the query-string form.
 """
-from typing import Annotated, Literal, get_args
+from typing import Annotated, Literal
 
 from pydantic import Field
 
+# ---------- Search ----------
 
-def _csv_pattern(*values: str) -> str:
-    choices = "|".join(values)
-    return rf"^(?:{choices})(?:,(?:{choices}))*$"
+QUERY = Annotated[
+    str | None,
+    Field(
+        description=(
+            "Search words, matched against title, description, content, keywords and URL. "
+            "Several words must all appear. Use double quotes for an exact phrase and AND, OR, NOT "
+            "with parentheses: `(tesla OR rivian) AND recall`. No wildcards. "
+            "Maximum length depends on the plan (100 to 512 characters). "
+            "Use only one of `q`, `q_in_title`, `q_in_meta`."
+        ),
+    ),
+]
 
+QUERY_IN_TITLE = Annotated[
+    str | None,
+    Field(description="Same search syntax as `q`, but matched against the article title only."),
+]
 
-# The 18 category codes NewsData accepts, as returned by its own filter API.
-# Keep this in sync: the codes below become a regex on CATEGORY_FILTER, so a
-# missing one is rejected client-side and never reaches the API.
-CATEGORY_CODE = Literal[
-    "breaking",
-    "business",
-    "crime",
-    "domestic",
-    "education",
-    "entertainment",
-    "environment",
-    "food",
-    "health",
-    "lifestyle",
-    "other",
-    "politics",
-    "science",
-    "sports",
-    "technology",
-    "top",
-    "tourism",
-    "world",
+QUERY_IN_META = Annotated[
+    str | None,
+    Field(
+        description=(
+            "Same search syntax as `q`, but matched against title, description, keywords and URL "
+            "(not the article body)."
+        ),
+    ),
+]
+
+# ---------- Location, language, category ----------
+
+COUNTRY_FILTER = Annotated[
+    str | list[str] | None,
+    Field(
+        description=(
+            "Country codes (ISO 3166-1 alpha-2), e.g. `us`, `gb`, `in`. Comma-separated string or list. "
+            "`country` keeps only these countries; `exclude_country` leaves them out."
+        ),
+    ),
+]
+
+LANGUAGE_FILTER = Annotated[
+    str | list[str] | None,
+    Field(
+        description=(
+            "Language codes (ISO 639-1), e.g. `en`, `hi`, `es`. Comma-separated string or list. "
+            "`language` keeps only these languages; `exclude_language` leaves them out."
+        ),
+    ),
 ]
 
 CATEGORY_FILTER = Annotated[
-    str | list[CATEGORY_CODE],
+    str | list[str] | None,
     Field(
-        pattern=_csv_pattern(*get_args(CATEGORY_CODE)),
         description=(
-            "One or more NewsData category codes. "
-            "Accepts either a list (preferred): `['technology', 'science']`, "
-            "or a comma-separated string without spaces: `'technology,science'`. "
-            "A single value also works as a plain string: `'technology'`. "
-            "Allowed values: breaking, business, crime, domestic, education, "
-            "entertainment, environment, food, health, lifestyle, other, "
-            "politics, science, sports, technology, top, tourism, world."
+            "News categories. Allowed: breaking, business, crime, domestic, education, entertainment, "
+            "environment, food, health, lifestyle, other, politics, science, sports, technology, top, "
+            "tourism, world. Comma-separated string or list. "
+            "`category` keeps only these categories; `exclude_category` leaves them out."
         ),
-        examples=["technology", ["technology", "science"], "business,world"],
     ),
 ]
 
-PRIORITY_DOMAIN = Annotated[
-    Literal["top", "medium", "low"],
+REGION_FILTER = Annotated[
+    str | list[str] | None,
     Field(
         description=(
-            "Filter results by source credibility tier. "
-            "`top` = highest credibility sources (top 10% of all sources). "
-            "`medium` = top 30% of sources. "
-            "`low` = top 50% of sources. "
-            "Omit for no filtering — returns articles from all sources. "
-            "Use `top` when accuracy and source quality matters most."
+            "Places mentioned in the article (city, state or country), e.g. `india` or `paris-france` "
+            "(join levels with `-` to require them together). Comma-separated string or list. "
+            "Corporate plan only."
         ),
-        examples=["top", "medium"],
     ),
 ]
 
-SORT = Annotated[
-    Literal["pubdateasc", "relevancy", "source"],
+# ---------- Sources ----------
+
+SOURCE_URL_FILTER = Annotated[
+    str | list[str] | None,
     Field(
         description=(
-            "Pass one sort mode only. Use `pubdateasc` for oldest first, "
-            "`relevancy` for query relevance, or `source` for source-priority order. "
-            "Omit this parameter to keep NewsData's default newest-first order."
+            "News sources by website address: host plus optional path, e.g. `bbc.com` or `vice.com/de`. "
+            "`https://` and `www.` are optional, so a `source.url` from a result can be passed as it is. "
+            "It must match a known source exactly; an unknown value returns the closest known sources. "
+            "Comma-separated string or list. "
+            "`source_url` keeps only these sources; `exclude_source_url` leaves them out."
         ),
-        examples=["pubdateasc", "relevancy"],
     ),
 ]
 
-SENTIMENT = Annotated[
-    Literal["positive", "negative", "neutral"],
+SOURCE_PRIORITY = Annotated[
+    Literal["top", "medium", "low"] | None,
     Field(
         description=(
-            "Pass one sentiment filter only. Use `positive`, `negative`, or `neutral`."
+            "Keep only sources above a rank: `top` = the highest-ranked sources only, "
+            "`medium` = top and mid-ranked, `low` = also lower-ranked. Omit for all sources."
         ),
-        examples=["positive", "neutral"],
     ),
 ]
 
-FLAG = Annotated[
-    bool | Literal[0, 1],
+# ---------- Time ----------
+
+FROM_DATE = Annotated[
+    str | None,
     Field(
         description=(
-            "Binary filter flag. "
-            "Pass `True` (preferred) or `1` to require articles that HAVE this field. "
-            "Pass `False` or `0` to require articles that LACK this field. "
-            "Omit the parameter entirely to apply no filter. "
-            "Used for: `image`, `video`, `full_content`."
+            "Start of the date range, in UTC: `YYYY-MM-DD` or `YYYY-MM-DD HH:MM:SS`, e.g. `2026-06-01`. "
+            "Not in the future. Cannot be combined with `timeframe`."
         ),
-        examples=[True, False, 1, 0],
+    ),
+]
+
+TO_DATE = Annotated[
+    str | None,
+    Field(
+        description=(
+            "End of the date range, in UTC: `YYYY-MM-DD` (covers that whole day) or `YYYY-MM-DD HH:MM:SS`. "
+            "Not in the future. Send `from_date` with it. Cannot be combined with `timeframe`."
+        ),
+    ),
+]
+
+TIMEFRAME = Annotated[
+    int | str | None,
+    Field(
+        description=(
+            "Only the last N hours (a number from 1 to 720, e.g. `6`) or the last N minutes "
+            "(with `m`, from `1m` to `43200m`, e.g. `90m`). Paid plans only. "
+            "Cannot be combined with `from_date` or `to_date`."
+        ),
+    ),
+]
+
+TIMEZONE = Annotated[
+    str | None,
+    Field(
+        description=(
+            "IANA time zone name, e.g. `Asia/Kolkata`. It only changes how `published_at` and `fetched_at` "
+            "are shown (default UTC); dates you pass are always read as UTC."
+        ),
+    ),
+]
+
+# ---------- Content flags ----------
+
+IMAGE_FLAG = Annotated[
+    bool | Literal[0, 1] | None,
+    Field(
+        description=(
+            "`true`: only articles that have an image. "
+            "`false`: no filtering, but `media.image_url` is left out of the result."
+        ),
+    ),
+]
+
+VIDEO_FLAG = Annotated[
+    bool | Literal[0, 1] | None,
+    Field(
+        description=(
+            "`true`: only articles that have a video. "
+            "`false`: no filtering, but `media.video_url` is left out of the result."
+        ),
+    ),
+]
+
+CONTENT_FLAG = Annotated[
+    bool | Literal[0, 1] | None,
+    Field(
+        description=(
+            "`true`: only articles that have full text, and that text is included in the result "
+            "(it is long; a list leaves it out otherwise). `false` changes nothing. Needs a paid plan."
+        ),
+    ),
+]
+
+PRESENCE_FLAG = Annotated[
+    bool | Literal[0, 1] | None,
+    Field(
+        description=(
+            "`true`: count only articles that have this (`image`: an image, `video`: a video, "
+            "`content`: full text; `content` needs a paid plan). `false` has no effect."
+        ),
     ),
 ]
 
 REMOVE_DUPLICATE = Annotated[
-    bool | Literal[1],
+    bool | Literal[0, 1] | None,
     Field(
         description=(
-            "Ask NewsData to drop duplicate articles from the result set. "
-            "Pass `True` (preferred) or `1` to enable. "
-            "Pass `False` to disable — equivalent to omitting the parameter. "
-            "Do NOT pass `0` (the API rejects it; omit instead)."
+            "`true`: leave out articles flagged as duplicates of another article. "
+            "`false` or omitted: keep them."
         ),
-        examples=[True, 1],
     ),
 ]
 
+# ---------- AI filters ----------
+
+SENTIMENT = Annotated[
+    Literal["positive", "neutral", "negative"] | None,
+    Field(description="Only articles whose AI sentiment is `positive`, `neutral` or `negative`."),
+]
+
+SENTIMENT_SCORE = Annotated[
+    float | None,
+    Field(
+        ge=1,
+        le=100,
+        description=(
+            "Minimum confidence, from 1 to 100, for the chosen `sentiment`, e.g. "
+            '`sentiment="negative", sentiment_score=80`. Requires `sentiment`.'
+        ),
+    ),
+]
+
+TAG_FILTER = Annotated[
+    str | list[str] | None,
+    Field(
+        description=(
+            "AI topic tag ids, lowercase with underscores, e.g. `artificial_intelligence`, `elections`, "
+            "`financial_markets`, `climate_and_weather`. An unknown id returns the closest valid ids. "
+            "Comma-separated string or list."
+        ),
+    ),
+]
+
+CRYPTO_TAG_FILTER = Annotated[
+    str | list[str] | None,
+    Field(
+        description=(
+            "Crypto topic tag ids. Allowed: adoption, blockchain, coin_fundamental, competition, "
+            "developer_community, economy, education, exchange, founders_investors, general, geopolitics, "
+            "global_markets, government, liquidity, mining, scam, security_privacy, sentiments, supply, "
+            "technical_analysis, technology. Comma-separated string or list."
+        ),
+    ),
+]
+
+ORGANIZATION_FILTER = Annotated[
+    str | list[str] | None,
+    Field(
+        description=(
+            "Organizations mentioned in the article, by name, e.g. `apple,uber`. "
+            "Comma-separated string or list. Corporate plan only."
+        ),
+    ),
+]
+
+CREATOR_FILTER = Annotated[
+    str | list[str] | None,
+    Field(description="Article authors (bylines), e.g. `jane doe`. Comma-separated string or list."),
+]
+
+DATATYPE_FILTER = Annotated[
+    str | list[str] | None,
+    Field(
+        description=(
+            "Content types. Allowed: news, blog, multimedia, forum, pressrelease, review, research, "
+            "opinion, analysis, podcast. Comma-separated string or list."
+        ),
+    ),
+]
+
+# ---------- Crypto and market ----------
+
+COIN_FILTER = Annotated[
+    str | list[str] | None,
+    Field(
+        description=(
+            "Coin ticker symbols, e.g. `btc`, `eth`. A coin name such as `bitcoin` is rejected, "
+            "and the error gives the right symbol. Comma-separated string or list."
+        ),
+    ),
+]
+
+MARKET_ID_FILTER = Annotated[
+    str | list[str] | None,
+    Field(
+        description=(
+            "Stock listing ids in the form ticker-country-exchange, e.g. `aapl-us-vy`. "
+            "To find an id, pass a ticker or company name (`aapl`): it is rejected, and the error lists "
+            "the matching ids. Results also show each article's `market_id`. "
+            "Comma-separated string or list."
+        ),
+    ),
+]
+
+# ---------- Specific articles ----------
+
+ARTICLE_IDS = Annotated[
+    str | list[str] | None,
+    Field(
+        description=(
+            "Article ids (the 32-character `id` of a result) to fetch exactly those articles, with their "
+            "full text (paid plans). Comma-separated string or list. Can only be combined with "
+            "`from_date` and `to_date`."
+        ),
+    ),
+]
+
+URL = Annotated[
+    str | None,
+    Field(
+        description=(
+            "Full URL of one article, starting with `http://` or `https://`, to fetch exactly that "
+            "article, with its full text (paid plans). Can only be combined with `from_date` and `to_date`."
+        ),
+    ),
+]
+
+# ---------- Output and paging ----------
+
 SIZE = Annotated[
-    int,
+    int | None,
     Field(
         ge=1,
         le=50,
         description=(
-            "Pass the number of articles to return in one page. Valid range is 1 to 50. "
-            "Free plans usually allow up to 10, while paid plans allow up to 50."
+            "Articles per call, from 1 to the plan maximum (10 on the Free plan, 50 on paid plans). "
+            "Default: 10."
         ),
-        examples=[10, 30],
     ),
 ]
+
+BUCKET_SIZE = Annotated[
+    int | None,
+    Field(
+        ge=1,
+        le=50,
+        description="Buckets per page, from 1 to 50. Default: 50.",
+    ),
+]
+
+PAGE = Annotated[
+    str | int | None,
+    Field(
+        description=(
+            "Paging token: the `next_page` value of the previous result, copied exactly. "
+            "Repeat every other argument unchanged. Omit on the first call."
+        ),
+    ),
+]
+
+SORT = Annotated[
+    Literal["pubdatedesc", "pubdateasc", "relevancy", "source", "fetched_at"] | None,
+    Field(
+        description=(
+            "Order of results: `pubdatedesc` newest first (default), `pubdateasc` oldest first, "
+            "`relevancy` best match first (needs `q`, `q_in_title` or `q_in_meta`), "
+            "`source` highest-ranked sources first, `fetched_at` most recently collected first."
+        ),
+    ),
+]
+
+SORT_CRYPTO = Annotated[
+    Literal["pubdatedesc", "pubdateasc", "relevancy", "source"] | None,
+    Field(
+        description=(
+            "Order of results: `pubdatedesc` newest first (default), `pubdateasc` oldest first, "
+            "`relevancy` best match first (needs `q`, `q_in_title` or `q_in_meta`), "
+            "`source` highest-ranked sources first."
+        ),
+    ),
+]
+
+SORT_COUNT = Annotated[
+    Literal["pubdatedesc", "pubdateasc"] | None,
+    Field(description="Order of buckets: `pubdatedesc` newest bucket first (default) or `pubdateasc` oldest first."),
+]
+
+EXCLUDE_FIELD_FILTER = Annotated[
+    str | list[str] | None,
+    Field(
+        description=(
+            "Result fields to leave out, to make the result smaller: a field (`content`, `keyword`), "
+            "a whole group (`media`, `source`, `ai`) or one field of a group (`ai.summary`). "
+            "`id` cannot be left out. Comma-separated string or list."
+        ),
+    ),
+]
+
+# ---------- Count tools only ----------
+
+INTERVAL = Annotated[
+    Literal["month", "day", "hour"] | None,
+    Field(description="Length of each bucket: `month`, `day` (default) or `hour`. Buckets are in UTC."),
+]
+
+# ---------- Real-time tools only ----------
+# The real-time (WebSocket) service has its own registration endpoint, with
+# its own names for the source filters and for the fields of a streamed
+# article. `register_realtime_query` keeps those names; the aliases below
+# describe them.
 
 REGISTRATION_ID = Annotated[
     str,
@@ -143,334 +427,93 @@ REGISTRATION_ID = Annotated[
             "returned by `register_realtime_query` or listed by "
             "`list_realtime_queries`. Do not invent one — look it up."
         ),
-        examples=["9b2d1e8a7c4f4b6e9d3a5c7e1f2a4b6c"],
     ),
 ]
 
-ARTICLE_IDS = Annotated[
-    str | list[str],
-    Field(
-        pattern=r"^[0-9a-f]{32}(?:,[0-9a-f]{32}){0,49}$",
-        description=(
-            "One to fifty NewsData `article_id` values (lowercase 32-char hex). "
-            "Accepts either a list (preferred): "
-            "`['668de67f2c32ce652104e7c4a5c9b517', '8c2cc0fdb87a3382876dca3448eb4cbc']`, "
-            "or a comma-separated string without spaces."
-        ),
-        examples=[
-            "668de67f2c32ce652104e7c4a5c9b517",
-            ["668de67f2c32ce652104e7c4a5c9b517", "8c2cc0fdb87a3382876dca3448eb4cbc"],
-            "668de67f2c32ce652104e7c4a5c9b517,8c2cc0fdb87a3382876dca3448eb4cbc",
-        ],
-    ),
-]
-
-QUERY = Annotated[
-    str,
-    Field(
-        min_length=1,
-        max_length=512,
-        description=(
-            "Full-text search query for `q`, `qInTitle`, or `qInMeta`. "
-            "Use only ONE of these three in the same request. "
-            "Supports boolean operators: AND, OR, NOT. "
-            "Use quotes for exact phrases: '\"climate change\"'. "
-            "Use parentheses for grouping: '(bitcoin OR ethereum) AND regulation'. "
-            "Max 512 characters."
-        ),
-        examples=[
-            "bitcoin",
-            "bitcoin AND ethereum",
-            '"climate change" NOT "fossil fuel"',
-            "(apple OR google) AND earnings",
-        ],
-    ),
-]
-
-TIMEFRAME = Annotated[
-    int | str,
-    Field(
-        description=(
-            "Time window for recent news. "
-            "Pass an integer for hours: `1` to `48` (e.g. `6` = last 6 hours). "
-            "Pass a string with suffix `m` for minutes: `1m` to `2880m` "
-            "(e.g. `90m` = last 90 minutes). "
-            "`48` and `2880m` are equivalent maximums. "
-            "Values outside these ranges will be rejected by the API."
-        ),
-        examples=[6, 24, 48, "90m", "2880m"],
-    ),
-]
-
-INTERVAL = Annotated[
-    Literal["hour", "day", "all"],
-    Field(
-        description=(
-            "Bucket size for count endpoints. "
-            "`hour` returns per-hour buckets, `day` returns per-day buckets, "
-            "`all` returns a single aggregate total (no buckets). "
-            "Used by `get_news_counts`, `get_crypto_counts`, `get_market_counts`."
-        ),
-        examples=["hour", "day", "all"],
-    ),
-]
-
-COUNTRY_FILTER = Annotated[
-    str | list[str],
-    Field(
-        pattern=r"^[a-z]{2}(?:,[a-z]{2}){0,9}$",
-        description=(
-            "One or more lowercase ISO 3166-1 alpha-2 country codes. "
-            "Accepts either a list (preferred): `['us', 'gb']`, "
-            "or a comma-separated string without spaces: `'us,gb'`. "
-            "Do not use country names or uppercase letters. Max 10 codes."
-        ),
-        examples=["us", ["us", "gb"], "in,au,jp"],
-    ),
-]
-
-LANGUAGE_FILTER = Annotated[
-    str | list[str],
-    Field(
-        pattern=r"^[a-z]{2}(?:,[a-z]{2}){0,9}$",
-        description=(
-            "One or more lowercase ISO 639-1 language codes. "
-            "Accepts either a list (preferred): `['en', 'fr']`, "
-            "or a comma-separated string without spaces: `'en,fr'`. "
-            "Do not use language names. Max 10 codes."
-        ),
-        examples=["en", ["en", "fr"], "hi,bn,ta"],
-    ),
-]
-
-TAG_FILTER = Annotated[
-    str | list[str],
-    Field(
-        min_length=1,
-        max_length=256,
-        pattern=r"^[^,]+(?:,[^,]+){0,9}$",
-        description=(
-            "One or more NewsData AI tags. "
-            "Accepts either a list (preferred): `['tourism', 'food']`, "
-            "or a comma-separated string without spaces: `'tourism,food'`. "
-            "Use the exact tag text expected by NewsData. Max 10 tags."
-        ),
-        examples=["food", ["tourism", "food"], "blockchain,markets"],
-    ),
-]
-
-REGION_FILTER = Annotated[
-    str | list[str],
-    Field(
-        min_length=1,
-        max_length=256,
-        pattern=r"^[^,]+(?:,[^,]+){0,9}$",
-        description=(
-            "One or more NewsData region names. "
-            "Accepts either a list (preferred): `['london-united kingdom', 'dubai-united arab emirates']`, "
-            "or a comma-separated string: `'london-united kingdom,dubai-united arab emirates'`. "
-            "Use city-country style values. Max 10 regions."
-        ),
-        examples=[
-            "new york-united states of america",
-            ["london-united kingdom", "dubai-united arab emirates"],
-            "london-united kingdom,dubai-united arab emirates",
-        ],
-    ),
-]
-
-DOMAIN_FILTER = Annotated[
-    str | list[str],
-    Field(
-        min_length=1,
-        max_length=255,
-        pattern=r"^[A-Za-z0-9.-]+(?:,[A-Za-z0-9.-]+){0,9}$",
-        description=(
-            "One or more domain identifiers (short source IDs or hostnames). "
-            "Accepts either a list (preferred): `['reuters.com', 'bbc.com']`, "
-            "or a comma-separated string: `'reuters.com,bbc.com'`. "
-            "Do not include `http://` or `https://`. Max 10 entries."
-        ),
-        examples=["bbc", ["bbc", "coindesk"], "reuters.com,bbc.com"],
-    ),
-]
-
-DOMAIN_URL_FILTER = Annotated[
-    str | list[str],
-    Field(
-        min_length=1,
-        max_length=255,
-        pattern=r"^[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?:,[A-Za-z0-9.-]+\.[A-Za-z]{2,}){0,9}$",
-        description=(
-            "One or more full domain hosts (hostnames only, not URLs). "
-            "Accepts either a list (preferred): `['bbc.com', 'reuters.com']`, "
-            "or a comma-separated string: `'bbc.com,reuters.com'`. "
-            "Use hostnames like `bbc.com`, not full article URLs. Max 10 hosts."
-        ),
-        examples=["bbc.com", ["bbc.com", "reuters.com"], "bbc.com,reuters.com"],
-    ),
-]
-
-EXCLUDE_FIELD_FILTER = Annotated[
-    str | list[str],
-    Field(
-        min_length=1,
-        max_length=256,
-        pattern=r"^[A-Za-z_]+(?:,[A-Za-z_]+){0,27}$",
-        description=(
-            "One or more response field names to exclude from the result. "
-            "Accepts either a list (preferred): `['pubdate', 'imageurl']`, "
-            "or a comma-separated string: `'pubdate,imageurl'`. "
-            "Use the field names expected by NewsData, e.g. `pubdate`, "
-            "`imageurl`, `content`, `source_id`. Max 28 fields."
-        ),
-        examples=["pubdate", ["pubdate", "imageurl"], "content,source_id"],
-    ),
-]
-
-TIMEZONE = Annotated[
-    str,
-    Field(
-        min_length=3,
-        max_length=64,
-        pattern=r"^[A-Za-z_+-]+(?:/[A-Za-z0-9_+-]+)+$",
-        description=(
-            "Pass an IANA timezone name. Use values like `Asia/Dubai` or "
-            "`America/New_York`."
-        ),
-        examples=["Asia/Dubai", "America/New_York"],
-    ),
-]
-
-PAGE = Annotated[
-    str,
-    Field(
-        description=(
-            "Pagination cursor for fetching the next page of results. "
-            "Only pass this if a previous API response returned a `nextPage` field. "
-            "On first request, omit this parameter entirely. "
-            "Copy the token exactly — do not modify, encode, or guess it."
-        ),
-        examples=["17349543216784a12c9f0f6fbe7c1234"],
-    ),
-]
-
-URL = Annotated[
-    str,
-    Field(
-        pattern=r"^https?://\S+$",
-        description=(
-            "Pass a full absolute article URL starting with `http://` or `https://`."
-        ),
-        examples=["https://newsdata.io/blog/multiple-api-key-newsdata-io"],
-    ),
-]
-
-DATE_OR_DATETIME = Annotated[
-    str,
-    Field(
-        pattern=r"^\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2}:\d{2})?$",
-        description=(
-            "A date as `YYYY-MM-DD` (e.g. `2025-01-01`) or as "
-            "`YYYY-MM-DD HH:MM:SS` (e.g. `2025-01-01 06:12:45`) when "
-            "you need sub-day precision. Both forms are accepted on "
-            "every endpoint that takes a date."
-        ),
-        examples=["2025-01-01", "2025-01-01 06:12:45"],
-    ),
-]
-
-COIN_FILTER = Annotated[
-    str | list[str],
-    Field(
-        min_length=1,
-        max_length=128,
-        pattern=r"^[A-Za-z0-9._-]+(?:,[A-Za-z0-9._-]+){0,9}$",
-        description=(
-            "One or more crypto coin symbols (ticker-style). "
-            "Accepts either a list (preferred): `['btc', 'eth']`, "
-            "or a comma-separated string: `'btc,eth'`. Max 10 coins."
-        ),
-        examples=["btc", ["btc", "eth"], "sol,ada,xrp"],
-    ),
-]
-
-MARKET_ID_FILTER = Annotated[
-    str | list[str],
-    Field(
-        min_length=1,
-        max_length=128,
-        pattern=r"^[A-Za-z0-9._-]+(?:,[A-Za-z0-9._-]+){0,9}$",
-        description=(
-            "One or more market identifiers or stock tickers. "
-            "Accepts either a list (preferred): `['AAPL', 'MSFT']`, "
-            "or a comma-separated string: `'AAPL,MSFT'`. Max 10 market IDs."
-        ),
-        examples=["AAPL", ["AAPL", "MSFT"], "TSLA,NVDA,AMZN"],
-    ),
-]
-
-ORGANIZATION_FILTER = Annotated[
-    str | list[str],
-    Field(
-        min_length=1,
-        max_length=256,
-        pattern=r"^[^,]+(?:,[^,]+){0,9}$",
-        description=(
-            "One or more organization names. "
-            "Accepts either a list (preferred): `['tesla', 'apple']`, "
-            "or a comma-separated string: `'tesla,apple'`. "
-            "Use plain organization names. Max 10 entries."
-        ),
-        examples=["uber", ["tesla", "apple"], "tesla,microsoft,google"],
-    ),
-]
-
-CREATOR_FILTER = Annotated[
-    str | list[str],
-    Field(
-        min_length=1,
-        max_length=256,
-        pattern=r"^[^,]+(?:,[^,]+){0,9}$",
-        description=(
-            "One or more author/byline names. "
-            "Accepts either a list (preferred): `['John Smith', 'Jane Doe']`, "
-            "or a comma-separated string: `'John Smith,Jane Doe'`. "
-            "Use the exact byline text expected by NewsData. Max 10 names."
-        ),
-        examples=["john smith", ["john smith", "jane doe"], "ana lopez,bao chen"],
-    ),
-]
-
-DATATYPE_FILTER = Annotated[
-    str | list[str],
-    Field(
-        min_length=1,
-        max_length=64,
-        pattern=r"^[^,]+(?:,[^,]+){0,9}$",
-        description=(
-            "Filter by content type. "
-            "Accepts either a list (preferred): `['article', 'video']`, "
-            "or a comma-separated string: `'article,video'`. "
-            "Use the exact datatype values supported by NewsData (e.g. `article`). "
-            "Max 10 entries."
-        ),
-        examples=["article", ["article", "video"], "article,image"],
-    ),
-]
-
-SENTIMENT_SCORE = Annotated[
+# The three settings of `stream_news`. They belong to this server, not to the
+# API, and each has a default other than `None`, so the default is written in
+# the tool signature (`max_articles: STREAM_MAX_ARTICLES = 10`). The two
+# numbers are not range-checked here: the tool moves an out-of-range value to
+# the nearest limit instead of refusing the call.
+STREAM_MAX_ARTICLES = Annotated[
     int,
     Field(
-        ge=0,
-        le=100,
         description=(
-            "Minimum confidence percentage (0–100) for the chosen `sentiment` label. "
-            "For example, with `sentiment='positive'` and `sentiment_score=50`, only "
-            "articles whose positive-sentiment confidence is at least 50 are returned. "
-            "REQUIRES `sentiment` to also be set; passing `sentiment_score` without "
-            "`sentiment` returns Error before any API call."
+            "Stop as soon as this many articles have arrived. From 1 to 50; a value outside that range "
+            "is moved to the nearest limit. Default: 10."
         ),
-        examples=[50, 70, 90],
+    ),
+]
+
+STREAM_WAIT_SECONDS = Annotated[
+    float,
+    Field(
+        description=(
+            "Longest time to listen, in seconds. From 1 to 120; a value outside that range is moved to "
+            "the nearest limit. Default: 30."
+        ),
+    ),
+]
+
+STREAM_CONTENT = Annotated[
+    bool,
+    Field(
+        description=(
+            "`true`: include each article's full text (`content`) in the result. It is long, so it is "
+            "left out by default."
+        ),
+    ),
+]
+
+REALTIME_DOMAIN_FILTER = Annotated[
+    str | list[str] | None,
+    Field(
+        description=(
+            "News sources by their NewsData source id, e.g. `bbc`. Comma-separated string or list. "
+            "Keeps only these sources."
+        ),
+    ),
+]
+
+# `exclude_domain` is named like `domain` but takes website addresses, not
+# source ids: the API answers `bbc` with HTTP 422 and suggests `bbc.com`.
+REALTIME_EXCLUDE_DOMAIN_FILTER = Annotated[
+    str | list[str] | None,
+    Field(
+        description=(
+            "News sources to leave out, by website address, e.g. `bbc.com` (a source id such as `bbc` "
+            "is rejected). It must match a known source exactly. Comma-separated string or list."
+        ),
+    ),
+]
+
+REALTIME_DOMAIN_URL_FILTER = Annotated[
+    str | list[str] | None,
+    Field(
+        description=(
+            "News sources by website address, e.g. `bbc.com`. It must match a known source exactly. "
+            "Comma-separated string or list. Keeps only these sources."
+        ),
+    ),
+]
+
+REALTIME_FLAG = Annotated[
+    bool | Literal[0, 1] | None,
+    Field(
+        description=(
+            "`true`: only articles that have this (`image`: an image, `video`: a video, "
+            "`full_content`: full text; `full_content` needs a paid plan). `false` does not filter."
+        ),
+    ),
+]
+
+REALTIME_EXCLUDE_FIELD_FILTER = Annotated[
+    str | list[str] | None,
+    Field(
+        description=(
+            "Fields to leave out of each streamed article, by the stream's own field names, "
+            "e.g. `content`, `keywords`, `ai_summary`. `article_id` cannot be left out. "
+            "Comma-separated string or list."
+        ),
     ),
 ]

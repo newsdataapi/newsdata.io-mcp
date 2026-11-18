@@ -2,108 +2,93 @@ from .._mcp import READ_ONLY_TOOL, mcp
 from ..formatters import format_counts
 from ..http import fetch
 from ..params import (
+    BUCKET_SIZE,
     COIN_FILTER,
-    DATE_OR_DATETIME,
-    DOMAIN_FILTER,
-    DOMAIN_URL_FILTER,
-    FLAG,
+    CRYPTO_TAG_FILTER,
+    FROM_DATE,
     INTERVAL,
     LANGUAGE_FILTER,
     PAGE,
-    PRIORITY_DOMAIN,
+    PRESENCE_FLAG,
     QUERY,
+    QUERY_IN_META,
+    QUERY_IN_TITLE,
     REMOVE_DUPLICATE,
     SENTIMENT,
-    SIZE,
-    SORT,
-    TAG_FILTER,
+    SORT_COUNT,
+    SOURCE_PRIORITY,
+    SOURCE_URL_FILTER,
+    TIMEFRAME,
+    TO_DATE,
 )
 from ..validators import check_mutex_groups
 
 
-@mcp.tool(annotations=READ_ONLY_TOOL)
+@mcp.tool(annotations=READ_ONLY_TOOL, structured_output=False)
 async def get_crypto_counts(
-    from_date: DATE_OR_DATETIME,
-    to_date: DATE_OR_DATETIME,
-    q: QUERY | None = None,
-    q_in_title: QUERY | None = None,
-    q_in_meta: QUERY | None = None,
-    language: LANGUAGE_FILTER | None = None,
-    exclude_language: LANGUAGE_FILTER | None = None,
-    coin: COIN_FILTER | None = None,
-    domain: DOMAIN_FILTER | None = None,
-    domainurl: DOMAIN_URL_FILTER | None = None,
-    exclude_domain: DOMAIN_FILTER | None = None,
-    full_content: FLAG | None = None,
-    image: FLAG | None = None,
-    video: FLAG | None = None,
-    priority_domain: PRIORITY_DOMAIN | None = None,
-    page: PAGE | None = None,
-    sentiment: SENTIMENT | None = None,
-    size: SIZE | None = None,
-    sort: SORT | None = None,
-    tag: TAG_FILTER | None = None,
-    interval: INTERVAL | None = None,
-    removeduplicate: REMOVE_DUPLICATE | None = None,
+    q: QUERY = None,
+    q_in_title: QUERY_IN_TITLE = None,
+    q_in_meta: QUERY_IN_META = None,
+    coin: COIN_FILTER = None,
+    language: LANGUAGE_FILTER = None,
+    exclude_language: LANGUAGE_FILTER = None,
+    source_url: SOURCE_URL_FILTER = None,
+    exclude_source_url: SOURCE_URL_FILTER = None,
+    source_priority: SOURCE_PRIORITY = None,
+    from_date: FROM_DATE = None,
+    to_date: TO_DATE = None,
+    timeframe: TIMEFRAME = None,
+    interval: INTERVAL = None,
+    image: PRESENCE_FLAG = None,
+    video: PRESENCE_FLAG = None,
+    content: PRESENCE_FLAG = None,
+    remove_duplicate: REMOVE_DUPLICATE = None,
+    sentiment: SENTIMENT = None,
+    tag: CRYPTO_TAG_FILTER = None,
+    size: BUCKET_SIZE = None,
+    page: PAGE = None,
+    sort: SORT_COUNT = None,
 ) -> str:
     """
-    Use this tool to fetch AGGREGATE CRYPTO ARTICLE COUNTS over a date range.
-    With `interval="hour"` or `"day"` returns per-bucket counts; with
-    `interval="all"` (or when `interval` is omitted) returns a single
-    aggregate count for the range.
+    COUNT how many CRYPTOCURRENCY NEWS articles match a search, as a total plus one count per month,
+    day or hour. Returns numbers only, no articles: to read articles use `get_crypto_news`.
+    COSTS 50 CREDITS PER CALL (and per page) and needs a paid plan. Call it only when the user
+    asks for counts, volumes or trends, never to check whether articles exist.
 
-    For actual crypto article content, use `get_crypto_news` instead.
+    The result has `total_results` (all matching articles in the whole date range) and one
+    `date_time,count` line per bucket; `date_time` is the start of the bucket in UTC.
+
+    Time window (pass dates, or `timeframe`, or neither):
+    - Neither: the last 30 days.
+    - `from_date` / `to_date`: a date range in UTC, as far back as the plan's history.
+    - `timeframe`: the last N hours or minutes.
 
     Strict rules (this tool returns Error before any API call if violated):
     - Use only ONE of `q`, `q_in_title`, or `q_in_meta`.
     - Do NOT combine `language` with `exclude_language`.
-    - Do NOT combine `domain`, `domainurl`, and/or `exclude_domain` with each other.
+    - Do NOT combine `source_url` with `exclude_source_url`.
 
-    Other guidance:
-    - `from_date` and `to_date` are REQUIRED.
-    - Date format: `YYYY-MM-DD` or `YYYY-MM-DD HH:MM:SS`.
-    - `country` and `category` are NOT available on this endpoint.
-    - `interval` chooses the bucket size: `hour` (per-hour buckets), `day`
-      (per-day buckets), or `all` (single aggregate total, no buckets).
-    - Use `coin` to narrow to specific coin ticker(s).
+    Other guidance (checked by the API; its error message names the fix):
+    - `coin` takes ticker symbols (`btc`, `eth`), not coin names.
+    - `interval` sets the bucket length: `month`, `day` (default) or `hour`. For the total alone, read
+      `total_results`; there is no `all` interval.
+    - Do NOT combine `timeframe` with `from_date` or `to_date`.
+    - `size` is the number of buckets per page. More buckets: pass `next_page` as `page` with the same
+      other arguments (another 50 credits).
 
     Examples:
-    - `from_date="2024-01-01", to_date="2024-01-31", coin="btc", interval="day"`
-      → daily BTC counts.
-    - `from_date="2024-11-01", to_date="2024-11-30", interval="hour", coin=["btc", "eth"]`
-      → hourly BTC/ETH counts.
-    - `from_date="2024-01-01", to_date="2024-12-31", interval="all", sentiment="positive"`
-      → a single aggregate count of bullish crypto articles for the year.
+    - `coin="btc"` → daily counts for the last 30 days
+    - `coin="btc,eth", from_date="2026-10-20", to_date="2026-10-21", interval="hour"`
+    - `q="ETF", sentiment="positive", interval="month", from_date="2026-01-01"`
     """
-    error = check_mutex_groups(locals())
+    # Parameter names are the API's own names, so the arguments are the query
+    # parameters. Keep this the first statement: `locals()` must hold only the
+    # arguments.
+    params = dict(locals())
+
+    error = check_mutex_groups(params)
     if error:
         return f"Error: {error}"
 
-    data = await fetch(
-        "crypto/count",
-        {
-            "from_date": from_date,
-            "to_date": to_date,
-            "q": q,
-            "qintitle": q_in_title,
-            "qinmeta": q_in_meta,
-            "language": language,
-            "excludelanguage": exclude_language,
-            "coin": coin,
-            "domain": domain,
-            "domainurl": domainurl,
-            "excludedomain": exclude_domain,
-            "full_content": full_content,
-            "image": image,
-            "video": video,
-            "prioritydomain": priority_domain,
-            "page": page,
-            "sentiment": sentiment,
-            "size": size,
-            "sort": sort,
-            "tag": tag,
-            "interval": interval,
-            "removeduplicate": removeduplicate,
-        },
-    )
-    return format_counts(data, "crypto/count")
+    data = await fetch("count/crypto", params)
+    return format_counts(data, "count/crypto")

@@ -1,49 +1,66 @@
 """Client-side parameter validation for NewsData MCP tools.
 
-The NewsData REST API enforces several "use only one of" constraints
-server-side and returns HTTP 422 when they're violated. We mirror those
-checks at the tool boundary so the LLM gets a fast, specific error
-message instead of a generic "Invalid parameters" after a wasted
-round-trip — and so the message references the *Python kwarg names*
-the LLM actually passed, not NewsData's wire names.
+The NewsData API refuses some parameter combinations (HTTP 422
+`TooManyQueryFilter`, HTTP 400 `InvalidRequest`). We mirror the two most
+common rules at the tool boundary so the model gets a specific message
+before any request is sent.
 
-`MUTEX_GROUPS` is the single source of truth for these constraints; see
-the official `newsdataapi` SDK's `_MUTEX_GROUPS` for the upstream
-equivalent.
+Every other rule (dates with `timeframe`, `id`/`url` with other filters,
+`sort="relevancy"` without a query, the minimum filter on `/count/news`)
+is left to the API: its own error message names the fix, and
+`formatters._format_error` passes it through unchanged.
+
+`MUTEX_GROUPS` holds the same groups the API enforces
+(`FILTERS_MAPPING['v2_filter_conflict']` in its `env_file.py`).
 """
 from collections.abc import Mapping
 from typing import Any
 
-# Mutually-exclusive parameter groups, using Python kwarg names (what
-# the tool function receives), not NewsData's wire names. Setting more
-# than one entry from any group in the same call returns an error from
-# `check_mutex_groups` before any HTTP call goes out.
+# Parameters that cannot be used together. Tool parameter names are the
+# API's own names, so these are both the Python kwarg names and the wire
+# names.
 MUTEX_GROUPS: tuple[tuple[str, ...], ...] = (
     ("q", "q_in_title", "q_in_meta"),
     ("country", "exclude_country"),
     ("category", "exclude_category"),
     ("language", "exclude_language"),
-    ("domain", "domainurl", "exclude_domain"),
+    ("source_url", "exclude_source_url"),
 )
 
 
-def check_mutex_groups(kwargs: Mapping[str, Any]) -> str | None:
-    """Return an LLM-readable error message if any mutex group has more
-    than one non-None member set, else None.
+def is_set(value: Any) -> bool:
+    """True when a tool argument carries a value.
 
-    `kwargs` should be the Python kwargs the tool received (typically
-    ``locals()`` called at the top of the tool function, before any
-    local variables are introduced). Missing keys are treated as not
-    set; unknown keys are ignored.
-
-    The returned string is designed to be useful to an LLM reading the
-    tool's error output: it names the conflicting parameters in
-    single-quoted form, lists the full mutex group so the LLM knows
-    what its options are, and ends with the explicit fix ("Omit the
-    others.").
+    `None`, a blank string and an empty list all mean "not passed":
+    `http._normalize_params` drops all three, so they must not count
+    here either.
     """
-    for group in MUTEX_GROUPS:
-        set_in_group = [name for name in group if kwargs.get(name) is not None]
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, list):
+        return bool(value)
+    return True
+
+
+def check_mutex_groups(
+    kwargs: Mapping[str, Any], groups: tuple[tuple[str, ...], ...] = MUTEX_GROUPS
+) -> str | None:
+    """Return an LLM-readable error message if any mutex group has more
+    than one member set, else None.
+
+    `kwargs` is the mapping of the tool's arguments by name. Missing keys
+    are treated as not set; unknown keys are ignored. `groups` defaults to
+    `MUTEX_GROUPS`; the real-time registration tool passes its own, because
+    its source filters have other names.
+
+    The returned string names the conflicting parameters in single-quoted
+    form, lists the full group so the model knows its options, and ends
+    with the explicit fix ("Omit the others.").
+    """
+    for group in groups:
+        set_in_group = [name for name in group if is_set(kwargs.get(name))]
         if len(set_in_group) > 1:
             conflict = ", ".join(repr(name) for name in set_in_group)
             allowed = ", ".join(repr(name) for name in group)
@@ -59,14 +76,12 @@ def check_sentiment_score_requires_sentiment(
 ) -> str | None:
     """Return an error if ``sentiment_score`` is set but ``sentiment`` is not.
 
-    NewsData's ``sentiment_score`` is a confidence threshold that only
-    makes sense when paired with a ``sentiment`` label (positive /
-    negative / neutral) — the API rejects ``sentiment_score`` alone
-    with a 422. We mirror the check client-side so the LLM gets the
-    specific guidance (set ``sentiment`` too) instead of a generic
-    "Invalid parameters" after a wasted round-trip.
+    ``sentiment_score`` is a confidence threshold for one ``sentiment``
+    label (positive / neutral / negative). The API answers
+    ``sentiment_score`` alone with HTTP 400; this check gives the same
+    answer without a request.
     """
-    if kwargs.get("sentiment_score") is not None and kwargs.get("sentiment") is None:
+    if is_set(kwargs.get("sentiment_score")) and not is_set(kwargs.get("sentiment")):
         return (
             "Parameter 'sentiment_score' requires 'sentiment' to also be set. "
             "Pass `sentiment='positive'`, `'negative'`, or `'neutral'` alongside "

@@ -34,8 +34,16 @@ def test_one_per_group_no_violation():
         "country": "us",
         "category": "technology",
         "language": "en",
-        "domain": "reuters.com",
+        "source_url": "reuters.com",
     }) is None
+
+
+def test_blank_values_count_as_not_set():
+    """`None`, "" and [] all mean "not passed": models differ in how they
+    leave a parameter out, and none of these reaches the API."""
+    assert check_mutex_groups({"q": "bitcoin", "q_in_title": "", "q_in_meta": "   "}) is None
+    assert check_mutex_groups({"country": [], "exclude_country": "cn"}) is None
+    assert check_mutex_groups({"language": None, "exclude_language": ["fr"]}) is None
 
 
 def test_unknown_kwargs_ignored():
@@ -104,41 +112,25 @@ def test_include_exclude_pairs_conflict(kwargs, expected_names):
         assert name in err
 
 
-# ---------- Group 5: three-way domain mutex ----------
+# ---------- Group 5: source_url / exclude_source_url ----------
 
-def test_domain_and_domainurl_conflict():
-    err = check_mutex_groups({"domain": "x", "domainurl": "y.com"})
+def test_source_url_and_exclude_source_url_conflict():
+    err = check_mutex_groups({"source_url": "bbc.com", "exclude_source_url": "reuters.com"})
     assert err is not None
-
-
-def test_domain_and_exclude_domain_conflict():
-    err = check_mutex_groups({"domain": "x", "exclude_domain": "y"})
-    assert err is not None
-
-
-def test_domainurl_and_exclude_domain_conflict():
-    err = check_mutex_groups({"domainurl": "y.com", "exclude_domain": "z"})
-    assert err is not None
-
-
-def test_all_three_domain_modes_conflict():
-    err = check_mutex_groups({
-        "domain": "x",
-        "domainurl": "y.com",
-        "exclude_domain": "z",
-    })
-    assert err is not None
-    for name in ("'domain'", "'domainurl'", "'exclude_domain'"):
+    for name in ("'source_url'", "'exclude_source_url'"):
         assert name in err
 
 
-def test_mutex_groups_includes_three_way_domain():
-    """Regression: the official SDK enforces a three-way domain mutex.
-    Earlier MCP docstrings only documented a two-way exclusion."""
-    domain_group = next(g for g in MUTEX_GROUPS if "domain" in g)
-    assert "domain" in domain_group
-    assert "domainurl" in domain_group
-    assert "exclude_domain" in domain_group
+def test_mutex_groups_match_the_api_conflict_groups():
+    """Same groups, same order, as the API enforces
+    (`FILTERS_MAPPING['v2_filter_conflict']` in its `env_file.py`)."""
+    assert MUTEX_GROUPS == (
+        ("q", "q_in_title", "q_in_meta"),
+        ("country", "exclude_country"),
+        ("category", "exclude_category"),
+        ("language", "exclude_language"),
+        ("source_url", "exclude_source_url"),
+    )
 
 
 # ---------- Error message shape ----------
@@ -157,15 +149,12 @@ def test_error_message_format_names_conflict_and_full_group():
     assert "Omit the others" in err
 
 
-def test_error_message_uses_python_kwarg_names_not_wire_names():
-    """The LLM passes Python kwarg names; the error must reference those,
-    not NewsData's wire names (qInTitle, excludecountry, ...)."""
+def test_error_message_names_the_parameters_as_passed():
+    """The error quotes each parameter exactly as the model passed it."""
     err = check_mutex_groups({"country": "us", "exclude_country": "gb"})
     assert err is not None
-    # Python kwarg name appears.
+    assert "'country'" in err
     assert "'exclude_country'" in err
-    # Wire-name form must NOT appear.
-    assert "excludecountry" not in err
 
 
 # ---------- First-group-wins ordering ----------
@@ -213,9 +202,16 @@ def test_neither_sentiment_nor_score_returns_none():
 
 
 def test_sentiment_score_zero_still_triggers_check():
-    """`0` is a valid threshold and must trigger the check if `sentiment`
-    is missing. Tests that `is not None` (not truthiness) is used."""
+    """A number is a passed value even when it is `0`: the check must not
+    use truthiness."""
     err = check_sentiment_score_requires_sentiment({"sentiment_score": 0})
+    assert err is not None
+
+
+def test_blank_sentiment_does_not_satisfy_the_requirement():
+    """`sentiment=""` is dropped before the request, so it cannot stand in
+    for a real label."""
+    err = check_sentiment_score_requires_sentiment({"sentiment_score": 50, "sentiment": ""})
     assert err is not None
 
 

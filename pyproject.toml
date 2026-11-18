@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "newsdata-mcp"
 dynamic = ["version"]
-description = "MCP server for the NewsData.io REST API (latest/archive/crypto/market news, source discovery, aggregate counts)."
+description = "MCP server for the NewsData.io REST API (news, crypto and market news, source discovery, article counts)."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.12"
