@@ -5,6 +5,6 @@ Hatch reads ``__version__`` directly from this file at build time (see
 is a one-line edit here. The installed-package version read by
 ``importlib.metadata.version("newsdata-mcp")`` will match.
 """
-__version__ = "0.3.2"
+__version__ = "0.4.0"
 
 __all__ = ["__version__"]

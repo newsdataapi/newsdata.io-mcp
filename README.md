@@ -13,7 +13,7 @@
 
 </div>
 
-The official MCP server for the [Newsdata.io](https://newsdata.io) News API. It exposes real-time, historical, crypto, and market news — plus source discovery and aggregate counts — as tools for **Claude Desktop**, **Claude Code**, **Cursor**, **Zed**, **Cline**, **VS Code Copilot**, **Windsurf**, **ChatGPT Desktop**, and any other MCP-compatible AI assistant. Ask questions in natural language; the assistant calls the right tool and returns formatted news.
+The official MCP server for the [Newsdata.io](https://newsdata.io) News API. It exposes real-time, historical, crypto, and market news — plus source discovery and aggregate counts — as tools for **Claude Desktop**, **Claude Code**, **Cursor**, **Zed**, **Cline**, **VS Code Copilot**, **Windsurf**, **ChatGPT**, and any other MCP-compatible AI assistant. Ask questions in natural language; the assistant calls the right tool and returns formatted news.
 
 ## Example prompts
 
@@ -32,8 +32,11 @@ Pull all market news on AAPL and NVDA, then list the headlines with publication 
 ```
 Which English-language news sources cover both technology and business in the US?
 ```
+```
+Watch for new articles about earthquakes for the next minute and tell me what comes in.
+```
 
-The assistant maps these requests to the appropriate tool (`get_latest_news`, `get_crypto_news`, `get_news_counts`, `get_market_news`, `get_news_sources`, etc.) — no manual API calls needed.
+The assistant maps these requests to the appropriate tool (`get_news`, `get_crypto_news`, `get_news_counts`, `get_market_news`, `get_news_sources`, `register_realtime_query` + `stream_news`, etc.) — no manual API calls needed.
 
 ---
 
@@ -68,10 +71,11 @@ cp .env.example .env
 |---|---|---|
 | `NEWSDATA_API_KEY` | _(required)_ | Newsdata.io credential. Missing key returns an error envelope on every call. |
 | `REQUEST_TIMEOUT` | `30` | Per-request timeout in seconds. |
-| `NEWSDATA_BASE_URL` | `https://newsdata.io/api/1` | Override for staging or a local mock. |
+| `NEWSDATA_BASE_URL` | `https://newsdata.io/api/2` | Override for staging or a local mock. Keep the version segment at the end. |
 | `NEWSDATA_MAX_RETRIES` | `5` | Maximum attempts for transient failures (network, 5xx, 429). |
 | `NEWSDATA_RETRY_BACKOFF` | `2.0` | Base for exponential backoff (`base * 2^(attempt-1)`). Seconds. |
-| `NEWSDATA_RETRY_BACKOFF_MAX` | `60.0` | Cap on a single retry sleep, seconds. |
+| `NEWSDATA_RETRY_BACKOFF_MAX` | `60.0` | Cap on a single retry sleep, seconds. When the API asks for a longer wait (`Retry-After`), the error is returned at once instead of waiting. |
+| `NEWSDATA_WS_API_URL` | `https://newsdata.io/api/2` | API root of the real-time registration endpoints (`register_realtime_query`, `list_realtime_queries`, `delete_realtime_query`). Set it on its own to send them somewhere other than `NEWSDATA_BASE_URL`. |
 | `NEWSDATA_WS_URL` | `wss://ws.newsdata.io/ws/event` | Real-time endpoint used by `stream_news`. |
 | `NEWSDATA_WS_MAX_WAIT` | `120` | Ceiling on `stream_news`'s `wait_seconds`, in seconds. |
 | `NEWSDATA_INTEGRATION_KEY` | _(unset)_ | Used only by `pytest -m integration`. Without it, live-API tests skip. |
@@ -86,7 +90,13 @@ The simplest way is to add the server to your MCP client's JSON config. Each cli
 
 ### Claude Code
 
-Either edit `~/.claude/mcp.json` (global) or `.claude/mcp.json` (per-project):
+Add the server with the `claude` CLI. `--scope user` makes it available in all your projects; leave it out to add it to the current project only:
+
+```bash
+claude mcp add --env NEWSDATA_API_KEY=your_newsdata_api_key --transport stdio --scope user newsdata-mcp -- uvx newsdata-mcp
+```
+
+Or put this block in `.mcp.json` at the project root. That file is meant to be shared with the project, so don't commit a real key in it:
 
 ```json
 {
@@ -137,7 +147,7 @@ Reload VS Code. Picked up by Copilot Chat in agent mode.
 
 Edit `~/.codeium/windsurf/mcp_config.json` — same JSON block as the Claude Code example. Restart Windsurf.
 
-### ChatGPT Desktop (OpenAI)
+### ChatGPT
 
 Run the server in HTTP mode locally:
 
@@ -146,7 +156,7 @@ NEWSDATA_API_KEY=your_key uvx newsdata-mcp \
   --transport streamable-http --host 127.0.0.1 --port 8000
 ```
 
-Then in **ChatGPT → Settings → Connectors → Add custom connector**, register `http://127.0.0.1:8000/mcp` as the connector endpoint.
+A server on your own machine is not public, so connect it through OpenAI's [Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels), pointing `tunnel-client` at `http://127.0.0.1:8000/mcp`. Then, in ChatGPT on the web, open **Plugins**, select **+ → Add custom MCP server**, choose **Tunnel** under **Connection**, and select **No authentication**.
 
 ---
 
@@ -154,20 +164,19 @@ Then in **ChatGPT → Settings → Connectors → Add custom connector**, regist
 
 | Tool | Endpoint | Description |
 |---|---|---|
-| `get_latest_news` | `/api/1/latest` | Recent and breaking news (last 48h) |
-| `get_archive_news` | `/api/1/archive` | Historical news, filterable by `from_date` / `to_date` |
-| `get_crypto_news` | `/api/1/crypto` | Crypto and blockchain-focused coverage |
-| `get_market_news` | `/api/1/market` | Stock, financial, and market-related news |
-| `get_news_sources` | `/api/1/sources` | Source discovery by country, category, or language |
-| `get_news_counts` | `/api/1/count` | Aggregate article counts over a date range (`hour` / `day` buckets or single `all` total) |
-| `get_crypto_counts` | `/api/1/crypto/count` | Aggregate crypto article counts over a date range |
-| `get_market_counts` | `/api/1/market/count` | Aggregate market article counts over a date range |
-| `register_realtime_query` | `/api/1/websocket/register` | Register a standing real-time query, returns a `registration_id` |
-| `list_realtime_queries` | `/api/1/websocket/fetch` | List the account's registered real-time queries |
-| `delete_realtime_query` | `/api/1/websocket/delete` | Delete a registered real-time query |
+| `get_news` | `/api/2/news` | News articles: the last 30 days by default, or any date range in the plan's history |
+| `get_crypto_news` | `/api/2/crypto` | Cryptocurrency news, filterable by `coin` |
+| `get_market_news` | `/api/2/market` | Stock-market and financial news, filterable by `market_id` |
+| `get_news_sources` | `/api/2/sources` | Up to 100 news sources by country, category, language, URL or rank |
+| `get_news_counts` | `/api/2/count/news` | How many news articles match: a total plus counts per `month` / `day` / `hour` |
+| `get_crypto_counts` | `/api/2/count/crypto` | The same for crypto news |
+| `get_market_counts` | `/api/2/count/market` | The same for market news |
+| `register_realtime_query` | `/api/2/websocket/register` | Register a standing real-time query, returns a `registration_id` |
+| `list_realtime_queries` | `/api/2/websocket/fetch` | List the account's registered real-time queries |
+| `delete_realtime_query` | `/api/2/websocket/delete` | Delete a registered real-time query |
 | `stream_news` | `wss://ws.newsdata.io/ws/event` | Collect real-time articles for a registered query ([below](#real-time-news-websocket)) |
 
-The eight REST news tools are read-only and idempotent; the MCP-protocol annotations let compatible clients (Claude Code, MCP Inspector, etc.) cache and parallelize calls. `register_realtime_query` and `delete_realtime_query` are annotated as mutating (the latter destructive), since they create and remove server-side state.
+The seven news, source and count tools are read-only and idempotent. `register_realtime_query` and `delete_realtime_query` are annotated as mutating (the latter destructive), since they create and remove server-side state.
 
 ---
 
@@ -181,22 +190,30 @@ register_realtime_query(
   q="bitcoin",
   language="en"
 )
-→ registration_id: a1b2c3d4e5f6
+→ registration_id: 9b2d1e8a7c4f4b6e9d3a5c7e1f2a4b6c
 ```
 
 ```text
 stream_news(
-  registration_id="a1b2c3d4e5f6",
+  registration_id="9b2d1e8a7c4f4b6e9d3a5c7e1f2a4b6c",
   max_articles=10,
   wait_seconds=30
 )
 ```
 
 `register_realtime_query` takes the familiar filter parameters (`q`, `country`,
-`language`, `domain`, …). There are **no date or paging filters** — a registered
-query matches news as it is published. Registering identical filters twice
-answers `Error (HTTP 409)`; call `list_realtime_queries` first to recover the
-existing id.
+`language`, `category`, …) and needs at least one of them. There are **no date
+or paging filters** — a registered query matches news as it is published.
+Registering identical filters twice answers `Error (HTTP 409, Conflict)` with
+the existing `registration_id`; `list_realtime_queries` shows every registration.
+
+Its parameters have the same names as on the news tools (`source_url`,
+`exclude_source_url`, `source_priority`, `content`, `remove_duplicate`,
+`exclude_field`, …), and a streamed article has the same fields as a
+`get_news` result.
+
+Streamed articles come **without their full text** by default. Pass
+`content=true` to `stream_news` to include it.
 
 ### Why `stream_news` is bounded
 
@@ -212,45 +229,50 @@ Every reply states why it stopped, so the model can act on it:
 | `max_articles` | Hit the cap — there may be more waiting |
 | `timeout` | The window elapsed; a `0` count means the feed was simply quiet |
 | `connection_closed` | The server ended the feed; returns whatever was collected |
+| `error` | The service ended the stream (for example, credits ran out); the articles that arrived are returned with the reason |
 
 Call it again to keep listening — the registration stays alive between calls.
-An empty result is normal for a narrow query and does **not** mean anything
-failed.
+Only articles published **while a call is listening** are delivered; use
+`get_news` for past news. An empty result is normal for a narrow query and does
+**not** mean anything failed.
 
 Bounds: `max_articles` is clamped to 1–50, `wait_seconds` to 1–`NEWSDATA_WS_MAX_WAIT`
 (120 by default).
 
-The server always accepts the handshake and then closes with code **1008** when
-the connection is refused, carrying one of three reasons: `invalid credentials
-or registration not found`, `api limit reached`, or `device limit reached` (more
-than 5 devices on one `registration_id`). Those return an `Error` and are not
-retried. Every other close code — including `1013` (`send timeout`) — is
-transient and surfaces as `stopped_because: connection_closed` with whatever was
-collected.
+A refused connection (bad key, unknown `registration_id`, no credits left, more
+than 5 devices on one `registration_id`) returns an `Error` with the service's
+message and is not retried.
 
 > **Cost.** Each delivered article consumes **1 API credit per connected
-> device**. A broad query over a long window can burn credits quickly — keep
-> `max_articles` no higher than you need.
+> device**. Articles arrive in batches and every article of a batch is charged,
+> so keep the query narrow.
 
 ---
 
 ## Example Tool Calls
 
 ```text
-get_latest_news(
-  q="((pizza OR burger) AND healthy)",
+get_news(
+  q="(pizza OR burger) AND healthy",
   country=["us", "gb"],
-  language="en",
-  size=10
+  language="en"
 )
 ```
 
 ```text
-get_archive_news(
+get_news(
   q="ukraine war",
-  from_date="2025-01-01",
-  to_date="2025-01-31",
-  language="en"
+  from_date="2026-06-01",
+  to_date="2026-06-30",
+  sort="relevancy"
+)
+```
+
+```text
+get_news(
+  category="business",
+  source_priority="top",
+  timeframe=24
 )
 ```
 
@@ -263,38 +285,30 @@ get_crypto_news(
 
 ```text
 get_market_news(
-  market_id=["AAPL", "NVDA"],
-  country="us"
+  market_id=["aapl-us-vy", "msft-us-vy"],
+  language="en"
 )
 ```
 
 ```text
 get_news_sources(
+  country="in",
   language="en",
-  priority_domain="top"
+  source_priority="top"
 )
 ```
 
 ```text
 get_news_counts(
-  from_date="2024-01-01",
-  to_date="2024-01-31",
   q="bitcoin",
-  interval="day"
+  from_date="2026-01-01",
+  to_date="2026-09-30",
+  interval="month"
 )
 ```
 
 ```text
-get_market_counts(
-  from_date="2024-01-01",
-  to_date="2024-03-31",
-  market_id=["AAPL", "NVDA"],
-  interval="hour"
-)
-```
-
-```text
-get_latest_news(
+get_news(
   q="elections",
   sentiment="positive",
   sentiment_score=70
@@ -302,23 +316,26 @@ get_latest_news(
 ```
 
 Notes on parameter shapes:
-- CSV-style filters accept either a Python list (preferred) or a comma-separated string.
-- Boolean flags accept `True`/`False` or `1`/`0`.
-- `timeframe` accepts an integer for hours (e.g. `24`) or a string with `m` suffix for minutes (e.g. `90m`).
-- `interval` (count tools only) accepts `hour`, `day`, or `all` (`all` returns a single aggregate count instead of buckets).
-- `sentiment_score` is a 0–100 minimum confidence percentage and requires `sentiment` to also be set — e.g. `sentiment="positive", sentiment_score=70` returns only articles whose positive-sentiment score is at least 70.
+- Multi-value filters accept a comma-separated string (`"us,gb"`) or a list (`["us", "gb"]`).
+- Flags (`image`, `video`, `content`, `remove_duplicate`) accept `true`/`false` or `1`/`0`.
+- `timeframe` accepts a number of hours (`24`, up to `720`) or minutes with an `m` suffix (`"90m"`, up to `"43200m"`). It cannot be combined with `from_date` / `to_date`.
+- `from_date` / `to_date` are UTC, as `YYYY-MM-DD` or `YYYY-MM-DD HH:MM:SS`.
+- `interval` (count tools only) accepts `month`, `day` (default) or `hour`.
+- `sentiment_score` is a minimum confidence from 1 to 100 and requires `sentiment` — e.g. `sentiment="positive", sentiment_score=70`.
+- `market_id` is a listing id such as `aapl-us-vy`, not a bare ticker. Pass a ticker or a company name and the error lists the matching ids.
+- `page` takes the `next_page` value of the previous result; repeat every other argument unchanged.
 
 ---
 
 ## Notes
 
-- Latest, crypto, and market endpoints return recent coverage — typically up to 48 hours.
-- Free plan results are delayed relative to paid plans.
-- Result `size` is capped by plan tier: commonly 10 results on free, up to 50 on paid plans.
-- The count endpoints return aggregate buckets (one per `interval` slot) rather than article content.
-- Real-time coverage needs a plan with WebSocket access; without it `stream_news` returns `Error: invalid credentials or registration not found`.
-- Real-time articles are billed per delivered article, per connected device.
-- Every tool returns plain text (the MCP-protocol return type). Errors come back as `Error (HTTP 4xx): …` with the status code and a friendly message; HTTP 429 errors include a `retry after Ns` hint when the upstream `Retry-After` header was parseable.
+- Without `from_date`, `to_date` or `timeframe`, the article and count tools cover the last 30 days.
+- The article tools return 10 articles per call unless `size` is passed (up to 50 on paid plans), without the full article text. Fetch an article by `id` or `url`, or pass `content=true`, to get the full text (paid plans).
+- Credits: `get_news`, `get_crypto_news` and `get_market_news` cost 1 credit per call, or 5 on paid plans when the date range starts more than 30 days ago. `get_news_sources` costs 1. Each count call costs 50.
+- Plans: the Free plan has a 12-hour delay, at most 10 articles per call, no full text or AI summary, no `timeframe` and no count tools. `region` and `organization` need the Corporate plan. A field the plan does not include is named in a `not_in_your_plan:` line at the top of the result.
+- `get_news_sources` returns at most 100 sources, best-ranked first, with no paging.
+- Real-time coverage needs a plan with WebSocket access. Real-time articles are billed per delivered article, per connected device.
+- Every tool returns plain text. Errors come back as `Error (HTTP 422, UnsupportedFilter): …` with the API's own message and, when the API suggests them, the valid values close to the rejected one.
 
 Full API reference: [https://newsdata.io/documentation](https://newsdata.io/documentation). Machine-readable contract: [OpenAPI 3.1 spec](https://newsdata.io/openapi.json).
 
@@ -326,12 +343,14 @@ Full API reference: [https://newsdata.io/documentation](https://newsdata.io/docu
 
 ## Docker
 
-For HTTP-mode deployments (e.g. behind a reverse proxy, or backing the ChatGPT Desktop connector):
+For HTTP-mode deployments:
 
 ```bash
 docker build -t newsdata-mcp .
 docker run --rm -p 8000:8000 -e NEWSDATA_API_KEY=your_newsdata_api_key newsdata-mcp
 ```
+
+Clients must address the server as `localhost` or `127.0.0.1`, for example `http://localhost:8000/mcp` through the port mapping above, or through a proxy that sends that host name. Requests for any other host name are refused with HTTP 421.
 
 The image is a multistage build on `python:3.12-slim` and runs as a non-root user — see the [Dockerfile](Dockerfile) for details.
 

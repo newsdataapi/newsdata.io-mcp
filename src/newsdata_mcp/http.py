@@ -1,36 +1,52 @@
 """HTTP layer for the NewsData.io REST API.
 
 Owns a lazy module-level ``httpx.AsyncClient`` so we reuse one
-connection pool across tool calls. Authentication (``X-ACCESS-KEY``)
-and ``User-Agent`` live on the client. Errors are returned as a
-``{"status": "error", "message": ...}`` envelope rather than raised, to
-keep tool functions return-type clean (MCP tools must return ``str``).
+connection pool across tool calls. Authentication (``X-ACCESS-KEY``),
+``User-Agent`` and ``Accept-Language: en`` live on the client. Errors are
+returned as a ``{"status": "error", "message": ...}`` envelope rather than
+raised, to keep tool functions return-type clean (MCP tools must return
+``str``).
+
+Error bodies are passed on, not replaced. NewsData answers a failed
+request with ``{"status": "error", "results": {"message": ..., "code":
+..., "recommendations": {...}}}``; the message, the code and the suggested
+values are what lets a model correct its own call, so they go into the
+envelope as they are. A generic message is used only when the body is not
+in that shape (a proxy's HTML page, an empty body).
 
 Retry policy:
 
 - Network errors (``TimeoutException``, ``ConnectError``) → retry with
   exponential backoff.
 - HTTP 5xx → retry with exponential backoff.
-- HTTP 429 → retry, honoring ``Retry-After`` (integer seconds or
-  HTTP-date per RFC 7231) when parseable; falling back to exponential
-  backoff otherwise. The exception is a 429 whose error code means the
-  account's API credits are exhausted — retrying cannot conjure more
-  credits, so that is a permanent failure.
-- HTTP 401/403/422/other 4xx, non-JSON 2xx, soft 200 errors → permanent
-  failure, never retried.
+- HTTP 429 ``RateLimitExceeded`` / ``TooManyRequests`` → retry, honoring
+  ``Retry-After`` (integer seconds or HTTP-date per RFC 7231) when
+  parseable; falling back to exponential backoff otherwise. A
+  ``Retry-After`` longer than ``NEWSDATA_RETRY_BACKOFF_MAX`` is not
+  waited out: the error is returned at once with the wait in it, because
+  a tool call that sleeps for minutes looks dead to the model.
+- HTTP 429 ``ApiLimitExceeded`` / ``ApiKeyLimitExceeded`` (credits used
+  up) and ``RegistrationLimitExceeded`` (no real-time registration left
+  on the plan) → permanent failure: waiting a few seconds changes
+  neither.
+- HTTP 400/401/403/422/other 4xx, non-JSON 2xx, soft 200 errors →
+  permanent failure, never retried.
 
 Error envelope::
 
     {"status": "error", "message": str, "status_code": int | None,
-     "retry_after": int | None}
+     "error_code": str, "recommendations": dict, "registration_id": str,
+     "retry_after": int}
 
 ``status_code`` is ``None`` for non-HTTP failures (timeout, missing
-key). ``retry_after`` is present only on 429s that included a
+key). ``error_code``, ``recommendations`` and ``registration_id`` are
+present only when the API sent them. ``retry_after`` is present only on 429s that included a
 parseable header.
 """
 import asyncio
 import json
 import logging
+import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -52,11 +68,30 @@ from .settings import (
 logger = logging.getLogger(__name__)
 
 # Wire-name keys whose semantics differ from a plain bool→{1,0} mapping.
-# `removeduplicate` accepts only `1` server-side (and silently drops the
-# call when omitted) — passing `False` means "I don't want the filter",
-# which is communicated to NewsData by omitting the parameter, not by
-# sending `0`.
-_BOOL_TRUTHY_ONLY_KEYS = frozenset({"removeduplicate"})
+# `remove_duplicate` only does something when it is `1`; `False` means
+# "I don't want the filter", which is communicated to NewsData by
+# omitting the parameter.
+_BOOL_TRUTHY_ONLY_KEYS = frozenset({"remove_duplicate"})
+
+# The key normally travels in the `X-ACCESS-KEY` header. Two real-time calls
+# (list and delete) send it as the `apikey` query parameter, and httpx writes
+# every request URL to its log at INFO level, so without this filter those two
+# calls would write the key to the server log.
+_APIKEY_IN_URL = re.compile(r"(apikey=)[^&\s\"']+", re.IGNORECASE)
+
+
+class _RedactApiKey(logging.Filter):
+    """Replace the value of an `apikey` query parameter in a log record."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        if "apikey=" in message.lower():
+            record.msg = _APIKEY_IN_URL.sub(r"\1***", message)
+            record.args = None
+        return True
+
+
+logging.getLogger("httpx").addFilter(_RedactApiKey())
 
 _client: httpx.AsyncClient | None = None
 _client_lock = asyncio.Lock()
@@ -66,8 +101,12 @@ def _normalize_params(params: Mapping[str, Any]) -> dict[str, Any]:
     """Coerce user-facing parameter values into the form NewsData expects.
 
     Centralised here so every tool stays simple and so the LLM can pass
-    the most natural Python form (True/False for flags, list for CSVs,
-    int for hour counts) without any tool having to translate.
+    the most natural form (true/false for flags, list for multi-value
+    filters, int for hour counts) without any tool having to translate.
+
+    `None`, blank strings and empty lists are all dropped: models differ
+    in how they leave an optional parameter out, and the API answers an
+    empty value with HTTP 422.
     """
     clean: dict[str, Any] = {}
     for key, value in params.items():
@@ -82,6 +121,12 @@ def _normalize_params(params: Mapping[str, Any]) -> dict[str, Any]:
                 # else: omit — caller meant "I don't want this filter".
                 continue
             clean[key] = 1 if value else 0
+            continue
+
+        if isinstance(value, str):
+            if value.strip():
+                clean[key] = value
+            # else: omit — a blank string is "not passed".
             continue
 
         if isinstance(value, list):
@@ -138,12 +183,61 @@ def _compute_backoff(attempt: int) -> float:
     return min(delay, RETRY_BACKOFF_MAX)
 
 
+def _api_error_details(body: Any) -> dict[str, Any]:
+    """Pull the useful parts out of a parsed NewsData error body.
+
+    Returns a dict with any of ``message``, ``error_code`` and
+    ``recommendations`` that the body carries in the expected shape, and
+    an empty dict when the body is not a NewsData error object at all.
+    """
+    results = body.get("results") if isinstance(body, dict) else None
+    if not isinstance(results, dict):
+        return {}
+
+    details: dict[str, Any] = {}
+    message = results.get("message")
+    if isinstance(message, str) and message.strip():
+        details["message"] = message.strip()
+    error_code = results.get("code")
+    if isinstance(error_code, str) and error_code.strip():
+        details["error_code"] = error_code.strip()
+    recommendations = results.get("recommendations")
+    if isinstance(recommendations, dict) and recommendations:
+        details["recommendations"] = recommendations
+    # A duplicate real-time registration (HTTP 409) names the id that
+    # already exists; the model needs it to carry on.
+    registration_id = results.get("registration_id")
+    if isinstance(registration_id, str) and registration_id.strip():
+        details["registration_id"] = registration_id.strip()
+    return details
+
+
+def _fallback_http_message(code: int, text: str) -> str:
+    """Message for an HTTP error whose body is not a NewsData error object."""
+    if code == 401:
+        return "Unauthorized. API key is invalid."
+    if code == 422:
+        return "Invalid parameters provided. Please check your request."
+    if code == 429:
+        return "Rate limit exceeded. Try again later."
+
+    body = (text or "").strip()
+    if len(body) > 500:
+        body = body[:500] + "…"
+    return f"HTTP {code} from Newsdata.io: {body}"
+
+
 async def _get_client() -> httpx.AsyncClient:
     """Lazy singleton so we reuse one connection pool across tool calls.
 
     Callers must guard against ``NEWSDATA_API_KEY is None`` (``fetch``
     does this at the top); we assert it here so the type-checker is
     satisfied with the non-Optional header dict.
+
+    ``Accept-Language: en`` is sent because the API translates error
+    messages, error codes and plan notices for other languages; the retry
+    policy compares error codes and the formatters recognise the notices
+    by their English text.
     """
     global _client
     if _client is None:
@@ -157,6 +251,7 @@ async def _get_client() -> httpx.AsyncClient:
                     headers={
                         "User-Agent": f"newsdata-mcp/{__version__}",
                         "X-ACCESS-KEY": NEWSDATA_API_KEY,
+                        "Accept-Language": "en",
                     },
                 )
     return _client
@@ -181,23 +276,8 @@ async def close_client() -> None:
             _client = None
 
 
-def _quota_exhausted(response: httpx.Response) -> bool:
-    """Whether a 429 body carries an error code meaning the account is out of
-    API credits, as opposed to a transient rate limit."""
-    try:
-        body = response.json()
-    except ValueError:
-        return False
-    if not isinstance(body, dict):
-        return False
-    results = body.get("results")
-    if not isinstance(results, dict):
-        return False
-    return results.get("code") in QUOTA_EXHAUSTED_CODES
-
-
 async def _request_once(
-    endpoint: str, clean: dict[str, Any], method: str = "GET"
+    endpoint: str, clean: dict[str, Any], method: str = "GET", base_url: str | None = None
 ) -> tuple[dict[str, Any], bool]:
     """Execute one HTTP attempt.
 
@@ -211,7 +291,7 @@ async def _request_once(
         client = await _get_client()
         response = await client.request(
             method,
-            f"{NEWSDATA_BASE_URL}/{endpoint}",
+            f"{base_url or NEWSDATA_BASE_URL}/{endpoint}",
             params=clean,
         )
         response.raise_for_status()
@@ -220,17 +300,14 @@ async def _request_once(
         if data.get("status") == "success":
             return {"status": "success", "data": data}, False
 
-        results = data.get("results")
-        soft_error = results if isinstance(results, dict) else {}
-        message = (
-            soft_error.get("message")
+        details = _api_error_details(data)
+        soft_envelope: dict[str, Any] = {"status": "error", "status_code": 200, **details}
+        soft_envelope["message"] = (
+            details.get("message")
             or data.get("message")
             or "Unknown API error."
         )
-        return (
-            {"status": "error", "message": message, "status_code": 200},
-            False,
-        )
+        return soft_envelope, False
 
     except httpx.TimeoutException:
         return (
@@ -258,52 +335,27 @@ async def _request_once(
         )
     except httpx.HTTPStatusError as e:
         code = e.response.status_code
-        retry_after = _parse_retry_after(e.response.headers.get("Retry-After"))
+        try:
+            error_body: Any = e.response.json()
+        except ValueError:
+            # Not JSON (a proxy's HTML page, plain text, empty body): there is
+            # no API message to pass on, so the fallback message is used.
+            error_body = None
 
-        if code == 401:
-            return (
-                {
-                    "status": "error",
-                    "message": "Unauthorized. API key is invalid.",
-                    "status_code": code,
-                },
-                False,
-            )
-        if code == 422:
-            return (
-                {
-                    "status": "error",
-                    "message": "Invalid parameters provided. Please check your request.",
-                    "status_code": code,
-                },
-                False,
-            )
+        envelope: dict[str, Any] = {
+            "status": "error",
+            "status_code": code,
+            **_api_error_details(error_body),
+        }
+        if "message" not in envelope:
+            envelope["message"] = _fallback_http_message(code, e.response.text)
+
         if code == 429:
-            # A 429 covers a burst limit, a rate limit, and exhausted API
-            # credits. Only the first two are worth retrying.
-            exhausted = _quota_exhausted(e.response)
-            envelope: dict[str, Any] = {
-                "status": "error",
-                "message": (
-                    "API credits exhausted for this key. Retrying will not "
-                    "help; upgrade the plan or wait for the quota to reset."
-                    if exhausted
-                    else "Rate limit exceeded. Try again later."
-                ),
-                "status_code": code,
-            }
+            retry_after = _parse_retry_after(e.response.headers.get("Retry-After"))
             if retry_after is not None:
                 envelope["retry_after"] = retry_after
-            return envelope, not exhausted
+            return envelope, envelope.get("error_code") not in QUOTA_EXHAUSTED_CODES
 
-        body = (e.response.text or "").strip()
-        if len(body) > 500:
-            body = body[:500] + "…"
-        envelope = {
-            "status": "error",
-            "message": f"HTTP {code} from Newsdata.io: {body}",
-            "status_code": code,
-        }
         # 5xx are transient; other 4xx are permanent (user-side mistakes).
         return envelope, code >= 500
     except json.JSONDecodeError:
@@ -335,15 +387,22 @@ async def _request_once(
 
 
 async def fetch(
-    endpoint: str, params: dict[str, Any], method: str = "GET"
+    endpoint: str, params: dict[str, Any], method: str = "GET", base_url: str | None = None
 ) -> dict[str, Any]:
     """Public entry point: one logical request, with retries.
 
-    Permanent failures (auth, validation, soft errors, JSON decode,
-    unexpected exceptions) return immediately. Transient failures
-    (network, 5xx, 429) retry up to ``MAX_RETRIES`` times with
-    exponential backoff (honoring ``Retry-After`` for 429 when
-    parseable).
+    ``endpoint`` is the path under ``NEWSDATA_BASE_URL``: ``news``,
+    ``market``, ``crypto``, ``sources``, ``count/news``, ``count/market``
+    or ``count/crypto``. The real-time tools pass their own ``base_url``
+    (``NEWSDATA_WS_API_URL``, which can point at another API root) and
+    ``method``: their registration endpoints use POST and DELETE.
+
+    Permanent failures (auth, validation, used-up credits, soft errors,
+    JSON decode, unexpected exceptions) return immediately. Transient
+    failures (network, 5xx, rate-limit 429) retry up to ``MAX_RETRIES``
+    times with exponential backoff (honoring ``Retry-After`` for 429 when
+    parseable). A 429 whose ``Retry-After`` is longer than
+    ``RETRY_BACKOFF_MAX`` is returned at once instead of waited out.
     """
     if not NEWSDATA_API_KEY:
         return {
@@ -361,7 +420,7 @@ async def fetch(
         "status_code": None,
     }
     for attempt in range(1, MAX_RETRIES + 1):
-        envelope, retryable = await _request_once(endpoint, clean, method)
+        envelope, retryable = await _request_once(endpoint, clean, method, base_url)
         if not retryable:
             return envelope
         last_envelope = envelope
@@ -369,6 +428,12 @@ async def fetch(
             break
 
         retry_after = envelope.get("retry_after")
+        if retry_after is not None and retry_after > RETRY_BACKOFF_MAX:
+            # The API asks for a wait longer than this server holds a tool
+            # call open (its rate-limit window can be many minutes away).
+            # Sleeping would leave the model with no answer at all, so the
+            # error goes back now, with the wait in it.
+            return envelope
         sleep_for = (
             float(retry_after)
             if retry_after is not None

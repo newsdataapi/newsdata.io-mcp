@@ -10,7 +10,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 NEWSDATA_API_KEY = os.getenv("NEWSDATA_API_KEY")
-NEWSDATA_BASE_URL = os.getenv("NEWSDATA_BASE_URL", "https://newsdata.io/api/1")
+# API root, version segment included. The tools are written for the
+# parameter names and response layout served under this root.
+NEWSDATA_BASE_URL = os.getenv("NEWSDATA_BASE_URL", "https://newsdata.io/api/2")
 
 try:
     REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))
@@ -57,16 +59,30 @@ except (ValueError, TypeError):
 # `ApiLimitExceeded` is the documented code (see the ErrorCode enum in
 # https://newsdata.io/openapi.json); `ApiKeyLimitExceeded` is accepted too
 # because the API has been observed to send it and the spec is not exhaustive.
-QUOTA_EXHAUSTED_CODES = frozenset({"ApiLimitExceeded", "ApiKeyLimitExceeded"})
+#
+# `RegistrationLimitExceeded` is the same kind of answer from the real-time
+# registration endpoint: the account already holds as many registered queries
+# as its plan allows. Only deleting one changes that, so it is not retried.
+QUOTA_EXHAUSTED_CODES = frozenset({"ApiLimitExceeded", "ApiKeyLimitExceeded", "RegistrationLimitExceeded"})
+
+# Root of the API that manages real-time registrations (register, list,
+# delete). The same root as `NEWSDATA_BASE_URL` by default; set it on its own
+# to send the real-time tools somewhere else.
+NEWSDATA_WS_API_URL = os.getenv("NEWSDATA_WS_API_URL", "https://newsdata.io/api/2")
 
 # Real-time WebSocket endpoint used by the `stream_news` tool.
 NEWSDATA_WS_URL = os.getenv("NEWSDATA_WS_URL", "wss://ws.newsdata.io/ws/event")
 
-# The feed a registered query matches against.
-WS_NEWS_TYPE = "latest"
+# The feed a registered query matches against. `news` is the only feed the
+# registration endpoint accepts for now (market and crypto will follow).
+WS_NEWS_TYPE = "news"
 
 # Close code the server uses for a permanent connection rejection.
 WS_POLICY_VIOLATION = 1008
+
+# Close code the server uses when it failed itself (it could not check the
+# credentials, or a delivery broke). The request was not judged invalid.
+WS_INTERNAL_ERROR = 1011
 
 # Hard ceilings for `stream_news`, which must return within a tool call.
 try:

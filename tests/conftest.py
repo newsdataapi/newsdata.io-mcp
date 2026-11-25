@@ -18,6 +18,11 @@ import pytest  # noqa: E402
 
 from newsdata_mcp import http  # noqa: E402
 
+# The unit tests mock this API root. It is pinned for every test so that a
+# `NEWSDATA_BASE_URL` in the shell or in `.env` (a staging or local API)
+# cannot send a unit test to an address that is not mocked.
+API_ROOT = "https://newsdata.io/api/2"
+
 
 @pytest.fixture(autouse=True)
 async def reset_http_client(monkeypatch):
@@ -27,6 +32,7 @@ async def reset_http_client(monkeypatch):
     # Make sure http.NEWSDATA_API_KEY reflects whatever the test set
     # (the conftest default is enough for most tests).
     monkeypatch.setattr(http, "NEWSDATA_API_KEY", os.environ["NEWSDATA_API_KEY"])
+    monkeypatch.setattr(http, "NEWSDATA_BASE_URL", API_ROOT)
 
     # Reset the singleton before the test runs.
     if http._client is not None:
