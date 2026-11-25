@@ -66,15 +66,16 @@ except (ValueError, TypeError):
 QUOTA_EXHAUSTED_CODES = frozenset({"ApiLimitExceeded", "ApiKeyLimitExceeded", "RegistrationLimitExceeded"})
 
 # Root of the API that manages real-time registrations (register, list,
-# delete). The real-time service is not served under `NEWSDATA_BASE_URL`;
-# it has its own root.
-NEWSDATA_WS_API_URL = os.getenv("NEWSDATA_WS_API_URL", "https://newsdata.io/api/1")
+# delete). The same root as `NEWSDATA_BASE_URL` by default; set it on its own
+# to send the real-time tools somewhere else.
+NEWSDATA_WS_API_URL = os.getenv("NEWSDATA_WS_API_URL", "https://newsdata.io/api/2")
 
 # Real-time WebSocket endpoint used by the `stream_news` tool.
 NEWSDATA_WS_URL = os.getenv("NEWSDATA_WS_URL", "wss://ws.newsdata.io/ws/event")
 
-# The feed a registered query matches against.
-WS_NEWS_TYPE = "latest"
+# The feed a registered query matches against. `news` is the only feed the
+# registration endpoint accepts for now (market and crypto will follow).
+WS_NEWS_TYPE = "news"
 
 # Close code the server uses for a permanent connection rejection.
 WS_POLICY_VIOLATION = 1008

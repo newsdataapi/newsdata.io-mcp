@@ -412,10 +412,8 @@ INTERVAL = Annotated[
 ]
 
 # ---------- Real-time tools only ----------
-# The real-time (WebSocket) service has its own registration endpoint, with
-# its own names for the source filters and for the fields of a streamed
-# article. `register_realtime_query` keeps those names; the aliases below
-# describe them.
+# `register_realtime_query` takes the API's filter names, so it reuses the
+# aliases above; the ones below exist only for the real-time tools.
 
 REGISTRATION_ID = Annotated[
     str,
@@ -465,55 +463,12 @@ STREAM_CONTENT = Annotated[
     ),
 ]
 
-REALTIME_DOMAIN_FILTER = Annotated[
-    str | list[str] | None,
-    Field(
-        description=(
-            "News sources by their NewsData source id, e.g. `bbc`. Comma-separated string or list. "
-            "Keeps only these sources."
-        ),
-    ),
-]
-
-# `exclude_domain` is named like `domain` but takes website addresses, not
-# source ids: the API answers `bbc` with HTTP 422 and suggests `bbc.com`.
-REALTIME_EXCLUDE_DOMAIN_FILTER = Annotated[
-    str | list[str] | None,
-    Field(
-        description=(
-            "News sources to leave out, by website address, e.g. `bbc.com` (a source id such as `bbc` "
-            "is rejected). It must match a known source exactly. Comma-separated string or list."
-        ),
-    ),
-]
-
-REALTIME_DOMAIN_URL_FILTER = Annotated[
-    str | list[str] | None,
-    Field(
-        description=(
-            "News sources by website address, e.g. `bbc.com`. It must match a known source exactly. "
-            "Comma-separated string or list. Keeps only these sources."
-        ),
-    ),
-]
-
 REALTIME_FLAG = Annotated[
     bool | Literal[0, 1] | None,
     Field(
         description=(
             "`true`: only articles that have this (`image`: an image, `video`: a video, "
-            "`full_content`: full text; `full_content` needs a paid plan). `false` does not filter."
-        ),
-    ),
-]
-
-REALTIME_EXCLUDE_FIELD_FILTER = Annotated[
-    str | list[str] | None,
-    Field(
-        description=(
-            "Fields to leave out of each streamed article, by the stream's own field names, "
-            "e.g. `content`, `keywords`, `ai_summary`. `article_id` cannot be left out. "
-            "Comma-separated string or list."
+            "`content`: full text; `content` needs a paid plan). `false` does not filter."
         ),
     ),
 ]

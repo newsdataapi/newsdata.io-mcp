@@ -12,12 +12,12 @@ from newsdata_mcp.formatters import (
     _format_error,
     _format_recommendation,
     _format_sentiment,
-    _format_stream_article,
     _get_path,
     _is_plan_notice,
     format_articles,
     format_counts,
     format_sources,
+    format_stream,
 )
 
 ARTICLE = {
@@ -267,27 +267,6 @@ def test_format_article_item_collects_plan_notices_instead_of_printing_them():
     # A second article with the same notices adds nothing new.
     _format_article_item(article, not_in_plan)
     assert not_in_plan == ["ai.summary", "content", "ai.sentiment", "ai.region", "ai.organization"]
-
-
-def test_format_stream_article_renders_symbol_and_market_id():
-    """Streamed market articles carry both `symbol` and `market_id`; the two are
-    separate response fields and both render."""
-    lines = _format_stream_article(
-        {
-            "article_id": "x",
-            "title": "Apple beats earnings",
-            "symbol": ["AAPL", "MSFT"],
-            "market_id": ["NASDAQ:AAPL", "NASDAQ:MSFT"],
-        }
-    )
-    assert "symbols: AAPL, MSFT" in lines
-    assert "market_id: NASDAQ:AAPL, NASDAQ:MSFT" in lines
-
-
-def test_format_stream_article_market_id_absent_emits_no_line():
-    lines = _format_stream_article({"article_id": "x", "symbol": ["AAPL"]})
-    assert "symbols: AAPL" in lines
-    assert not any(line.startswith("market_id:") for line in lines)
 
 
 # ---------- format_articles ----------
@@ -755,54 +734,53 @@ def test_format_error_shows_the_existing_registration_id():
     ]
 
 
-# ---------- real-time: a streamed article has its own layout ----------
+# ---------- real-time: a streamed article has the article layout ----------
+
+REGISTRATION = "1111111122223333444455556666aaaa"
 
 
-def test_format_stream_article_uses_the_stream_field_names():
-    lines = _format_stream_article(
-        {
-            "article_id": "x",
-            "title": "Hello",
-            "link": "https://example.com/a",
-            "pubDate": "2026-11-16 06:15:00",
-            "source_name": "Example News",
-            "ai_tag": ["economy"],
-        }
-    )
-    assert lines == [
+def test_format_stream_renders_articles_like_the_news_tools():
+    article = {
+        "id": "x",
+        "title": "Hello",
+        "url": "https://example.com/a",
+        "published_at": "2026-11-16T06:15:00Z",
+        "source": {"name": "Example News"},
+        "ai": {"summary": "Short.", "tag": ["economy"]},
+    }
+    lines = format_stream([article], REGISTRATION, "max_articles", 1.0).splitlines()
+    assert lines[lines.index("Article 1:") + 1:] == [
         "title: Hello",
         "url: https://example.com/a",
-        "source_name: Example News",
-        "published_at: 2026-11-16 06:15:00",
-        "ai_tags: economy",
-        "article_id: x",
+        "source.name: Example News",
+        "published_at: 2026-11-16T06:15:00Z",
+        "ai.summary: Short.",
+        "ai.tag: economy",
+        "id: x",
     ]
 
 
-def test_format_stream_article_reads_the_ai_summary_field():
-    """The stream names the field `ai_summary`; there is no `summary`."""
-    lines = _format_stream_article({"article_id": "x", "title": "Hello", "ai_summary": "Short."})
-    assert lines == ["title: Hello", "ai_summary: Short.", "article_id: x"]
-
-
-def test_format_stream_article_leaves_out_plan_notices_and_reports_their_names():
-    not_in_plan: list[str] = []
+def test_format_stream_leaves_out_plan_notices_and_reports_their_names_once():
     article = {
-        "article_id": "x",
+        "id": "x",
         "title": "Hello",
         "content": "ONLY AVAILABLE IN PAID PLANS",
-        "sentiment": "ONLY AVAILABLE IN PROFESSIONAL AND CORPORATE PLANS",
-        "sentiment_stats": "ONLY AVAILABLE IN PROFESSIONAL AND CORPORATE PLANS",
-        "ai_region": "ONLY AVAILABLE IN CORPORATE PLANS",
+        "ai": {
+            "sentiment": "ONLY AVAILABLE IN PROFESSIONAL AND CORPORATE PLANS",
+            "region": "ONLY AVAILABLE IN CORPORATE PLANS",
+        },
     }
-    lines = _format_stream_article(article, not_in_plan)
-    _format_stream_article(article, not_in_plan)  # a second article adds nothing new
+    out = format_stream([article, article], REGISTRATION, "max_articles", 1.0)
 
-    assert lines == ["title: Hello", "article_id: x"]
-    assert not_in_plan == ["content", "sentiment", "sentiment_stats", "ai_region"]
+    assert "ONLY AVAILABLE IN" not in out
+    assert out.count("not_in_your_plan: content, ai.sentiment, ai.region") == 1
 
 
-def test_format_stream_article_can_leave_the_full_text_out():
-    article = {"article_id": "x", "title": "Hello", "ai_summary": "Short.", "content": "Long text."}
-    assert "content: Long text." in _format_stream_article(article)
-    assert _format_stream_article(article, full_text=False) == ["title: Hello", "ai_summary: Short.", "article_id: x"]
+def test_format_stream_can_leave_the_full_text_out():
+    article = {"id": "x", "title": "Hello", "ai": {"summary": "Short."}, "content": "Long text."}
+    assert "content: Long text." in format_stream([article], REGISTRATION, "timeout", 1.0)
+
+    out = format_stream([article], REGISTRATION, "timeout", 1.0, full_text=False)
+    assert "Long text." not in out
+    assert "ai.summary: Short." in out
+    assert "get_news with id=<its id>" in out

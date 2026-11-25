@@ -31,15 +31,12 @@ from ..params import (
     COUNTRY_FILTER,
     CREATOR_FILTER,
     DATATYPE_FILTER,
+    EXCLUDE_FIELD_FILTER,
     LANGUAGE_FILTER,
     ORGANIZATION_FILTER,
     QUERY,
     QUERY_IN_META,
     QUERY_IN_TITLE,
-    REALTIME_DOMAIN_FILTER,
-    REALTIME_DOMAIN_URL_FILTER,
-    REALTIME_EXCLUDE_DOMAIN_FILTER,
-    REALTIME_EXCLUDE_FIELD_FILTER,
     REALTIME_FLAG,
     REGION_FILTER,
     REGISTRATION_ID,
@@ -47,6 +44,7 @@ from ..params import (
     SENTIMENT,
     SENTIMENT_SCORE,
     SOURCE_PRIORITY,
+    SOURCE_URL_FILTER,
     STREAM_CONTENT,
     STREAM_MAX_ARTICLES,
     STREAM_WAIT_SECONDS,
@@ -67,17 +65,6 @@ from ..validators import check_mutex_groups, check_sentiment_score_requires_sent
 
 logger = logging.getLogger(__name__)
 
-# Filters of `register_realtime_query` that cannot be used together. The
-# real-time service names its source filters `domain` / `domainurl` /
-# `exclude_domain`, so it has its own list instead of `validators.MUTEX_GROUPS`.
-REALTIME_MUTEX_GROUPS: tuple[tuple[str, ...], ...] = (
-    ("q", "q_in_title", "q_in_meta"),
-    ("country", "exclude_country"),
-    ("category", "exclude_category"),
-    ("language", "exclude_language"),
-    ("domain", "domainurl", "exclude_domain"),
-)
-
 
 @mcp.tool(annotations=CREATE_TOOL, structured_output=False)
 async def register_realtime_query(
@@ -90,15 +77,14 @@ async def register_realtime_query(
     exclude_category: CATEGORY_FILTER = None,
     language: LANGUAGE_FILTER = None,
     exclude_language: LANGUAGE_FILTER = None,
-    domain: REALTIME_DOMAIN_FILTER = None,
-    domainurl: REALTIME_DOMAIN_URL_FILTER = None,
-    exclude_domain: REALTIME_EXCLUDE_DOMAIN_FILTER = None,
-    priority_domain: SOURCE_PRIORITY = None,
+    source_url: SOURCE_URL_FILTER = None,
+    exclude_source_url: SOURCE_URL_FILTER = None,
+    source_priority: SOURCE_PRIORITY = None,
     timezone: TIMEZONE = None,
-    full_content: REALTIME_FLAG = None,
+    content: REALTIME_FLAG = None,
     image: REALTIME_FLAG = None,
     video: REALTIME_FLAG = None,
-    removeduplicate: REMOVE_DUPLICATE = None,
+    remove_duplicate: REMOVE_DUPLICATE = None,
     tag: TAG_FILTER = None,
     sentiment: SENTIMENT = None,
     sentiment_score: SENTIMENT_SCORE = None,
@@ -106,7 +92,7 @@ async def register_realtime_query(
     organization: ORGANIZATION_FILTER = None,
     creator: CREATOR_FILTER = None,
     datatype: DATATYPE_FILTER = None,
-    excludefield: REALTIME_EXCLUDE_FIELD_FILTER = None,
+    exclude_field: EXCLUDE_FIELD_FILTER = None,
 ) -> str:
     """
     Use this tool to SET UP a real-time news feed. It registers a standing
@@ -122,7 +108,7 @@ async def register_realtime_query(
     - Do NOT combine `country` with `exclude_country`.
     - Do NOT combine `category` with `exclude_category`.
     - Do NOT combine `language` with `exclude_language`.
-    - Do NOT combine `domain`, `domainurl`, and/or `exclude_domain` with each other.
+    - Do NOT combine `source_url` with `exclude_source_url`.
     - `sentiment_score` requires `sentiment` to also be set.
 
     Other guidance:
@@ -131,8 +117,7 @@ async def register_realtime_query(
       `get_news`.
     - At least ONE of these is required, or the API answers Error (HTTP 400):
       `q`, `q_in_title`, `q_in_meta`, `country`, `category`, `language`,
-      `domain`, `domainurl`, `priority_domain`, `image`, `video`,
-      `full_content`.
+      `source_url`, `source_priority`, `image`, `video`, `content`.
     - Keep the query narrow: every article it matches costs 1 credit when it
       is streamed.
     - Registering the SAME filters twice answers Error (HTTP 409); the
@@ -143,47 +128,24 @@ async def register_realtime_query(
 
     Examples:
     - `q="bitcoin", language="en"` → English bitcoin news as it breaks
-    - `category="technology", country="us", priority_domain="top"`
+    - `category="technology", country="us", source_priority="top"`
     - `q="earnings beat", organization="tesla,nvidia"`
     """
+    # Parameter names are the API's own names, so the arguments are the query
+    # parameters. Keep this the first statement: `locals()` must hold only the
+    # arguments.
+    params = dict(locals())
+
     error = (
-        check_mutex_groups(locals(), REALTIME_MUTEX_GROUPS)
-        or check_sentiment_score_requires_sentiment(locals())
+        check_mutex_groups(params)
+        or check_sentiment_score_requires_sentiment(params)
     )
     if error:
         return f"Error: {error}"
 
     data = await fetch(
         "websocket/register",
-        {
-            "q": q,
-            "qInTitle": q_in_title,
-            "qInMeta": q_in_meta,
-            "country": country,
-            "excludecountry": exclude_country,
-            "category": category,
-            "excludecategory": exclude_category,
-            "language": language,
-            "excludelanguage": exclude_language,
-            "domain": domain,
-            "domainurl": domainurl,
-            "excludedomain": exclude_domain,
-            "prioritydomain": priority_domain,
-            "timezone": timezone,
-            "full_content": full_content,
-            "image": image,
-            "video": video,
-            "removeduplicate": removeduplicate,
-            "tag": tag,
-            "sentiment": sentiment,
-            "sentiment_score": sentiment_score,
-            "region": region,
-            "organization": organization,
-            "creator": creator,
-            "datatype": datatype,
-            "excludefield": excludefield,
-            "news_type": WS_NEWS_TYPE,
-        },
+        {**params, "news_type": WS_NEWS_TYPE},
         method="POST",
         base_url=NEWSDATA_WS_API_URL,
     )
@@ -202,8 +164,9 @@ async def list_realtime_queries() -> str:
 
     Strict rules: none. Takes no parameters.
     """
-    # This endpoint and the delete endpoint read the key only from the `apikey`
-    # query parameter; the `X-ACCESS-KEY` header alone is answered with 401.
+    # This call and the delete call send the key as the `apikey` query
+    # parameter (the endpoints take it there or in the `X-ACCESS-KEY` header);
+    # `http._RedactApiKey` keeps it out of the request log.
     data = await fetch("websocket/fetch", {"apikey": NEWSDATA_API_KEY}, base_url=NEWSDATA_WS_API_URL)
     return format_registered_queries(data)
 
@@ -263,8 +226,7 @@ async def stream_news(
       loop; either widen the query or wait longer.
     - Full text: left out by default, because it is long. Pass `content=true`
       to include it in a call. An article is delivered only once, so to read
-      one that already arrived in full, call `get_news` with
-      `id=<its article_id>`.
+      one that already arrived in full, call `get_news` with `id=<its id>`.
     - COST: every article the service delivers while this tool listens
       consumes 1 API credit per connected device. Articles arrive in batches:
       a batch that goes past `max_articles` is charged in full, and the extra

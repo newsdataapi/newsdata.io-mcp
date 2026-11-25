@@ -70,14 +70,13 @@ logger = logging.getLogger(__name__)
 # Wire-name keys whose semantics differ from a plain bool→{1,0} mapping.
 # `remove_duplicate` only does something when it is `1`; `False` means
 # "I don't want the filter", which is communicated to NewsData by
-# omitting the parameter. `removeduplicate` is the same flag under the name
-# the real-time registration endpoint uses.
-_BOOL_TRUTHY_ONLY_KEYS = frozenset({"remove_duplicate", "removeduplicate"})
+# omitting the parameter.
+_BOOL_TRUTHY_ONLY_KEYS = frozenset({"remove_duplicate"})
 
-# The key normally travels in the `X-ACCESS-KEY` header. Two real-time
-# endpoints (list and delete) read it only from the `apikey` query parameter,
-# and httpx writes every request URL to its log at INFO level, so without this
-# filter those two calls would write the key to the server log.
+# The key normally travels in the `X-ACCESS-KEY` header. Two real-time calls
+# (list and delete) send it as the `apikey` query parameter, and httpx writes
+# every request URL to its log at INFO level, so without this filter those two
+# calls would write the key to the server log.
 _APIKEY_IN_URL = re.compile(r"(apikey=)[^&\s\"']+", re.IGNORECASE)
 
 
@@ -395,8 +394,8 @@ async def fetch(
     ``endpoint`` is the path under ``NEWSDATA_BASE_URL``: ``news``,
     ``market``, ``crypto``, ``sources``, ``count/news``, ``count/market``
     or ``count/crypto``. The real-time tools pass their own ``base_url``
-    (``NEWSDATA_WS_API_URL``) and ``method``: their registration endpoints
-    live under a different API root and use POST and DELETE.
+    (``NEWSDATA_WS_API_URL``, which can point at another API root) and
+    ``method``: their registration endpoints use POST and DELETE.
 
     Permanent failures (auth, validation, used-up credits, soft errors,
     JSON decode, unexpected exceptions) return immediately. Transient

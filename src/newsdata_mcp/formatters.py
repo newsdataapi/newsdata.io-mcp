@@ -222,9 +222,9 @@ def _format_article_item(
     order.
 
     A field that holds a plan notice is not rendered; its name is added
-    to ``not_in_plan`` (once) so ``format_articles`` can report it a
-    single time for the whole page. With ``full_text=False`` the
-    ``content`` field is skipped.
+    to ``not_in_plan`` (once) so ``format_articles`` and ``format_stream``
+    can report it a single time for the whole answer. With
+    ``full_text=False`` the ``content`` field is skipped.
     """
     lines: list[str] = []
     for path in _ARTICLE_FIELDS:
@@ -379,95 +379,19 @@ def format_sources(data: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Real-time tools. The real-time service has its own, flat article layout
-# (`article_id`, `link`, `pubDate`, `source_name`, `ai_tag`, ...), so a
-# streamed article has its own renderer; `_format_article_item` above is for
-# the grouped layout of the news, crypto and market tools.
+# Real-time tools. A streamed article has the same grouped layout as the
+# articles of the news tools, so it is rendered by `_format_article_item`.
 # ---------------------------------------------------------------------------
 
 
 # Header line of a `stream_news` answer whose full text was left out. A
 # streamed article is delivered once, so asking again with `content=true`
 # only helps for articles still to come; one that was already delivered is
-# read through `get_news`, whose `id` is the stream's `article_id`.
+# read through `get_news` by its `id`.
 _STREAM_FULL_TEXT_HINT = (
     "full_text: left out of this result. Pass content=true to include it in later calls. These articles "
-    "are not sent again: to read one in full, call get_news with id=<its article_id>."
+    "are not sent again: to read one in full, call get_news with id=<its id>."
 )
-
-
-def _format_sentiment_stats(value: Any) -> str | None:
-    """Flatten a streamed article's sentiment_stats dict (``{"positive": N,
-    ...}``) into a CSV string. Returns ``None`` for missing or empty values
-    so ``_append_field`` skips the line entirely."""
-    if not isinstance(value, dict) or not value:
-        return None
-
-    return ", ".join(f"{key}={val}" for key, val in value.items())
-
-
-def _format_stream_article(
-    article: dict[str, Any], not_in_plan: list[str] | None = None, full_text: bool = True
-) -> list[str]:
-    """Render one article delivered by the real-time stream. Fields are
-    ordered most-useful first (title, url, source, when, summary text);
-    less-important fields (media URLs, AI metadata, ids) come later.
-
-    A field that holds a plan notice is not rendered; its name in the
-    stream (`content`, `ai_tag`, ...) is added to ``not_in_plan`` (once) so
-    ``format_stream`` can report it a single time for the whole answer.
-    With ``full_text=False`` the ``content`` field is skipped.
-    """
-    withheld = [key for key, value in article.items() if _is_plan_notice(value)]
-    if withheld:
-        if not_in_plan is not None:
-            not_in_plan.extend(key for key in withheld if key not in not_in_plan)
-        article = {key: value for key, value in article.items() if key not in withheld}
-
-    lines: list[str] = []
-    # What and where.
-    _append_field(lines, "title", article.get("title"))
-    _append_field(lines, "url", article.get("link"))
-    _append_field(lines, "source_name", article.get("source_name"))
-    _append_field(lines, "published_at", article.get("pubDate"))
-    # The article text, in increasing length.
-    _append_field(lines, "description", article.get("description"))
-    _append_field(lines, "ai_summary", article.get("ai_summary"))
-    if full_text:
-        _append_field(lines, "content", article.get("content"))
-    # Classification and language.
-    _append_field(lines, "language", article.get("language"))
-    _append_field(lines, "countries", article.get("country"))
-    _append_field(lines, "categories", article.get("category"))
-    _append_field(lines, "keywords", article.get("keywords"))
-    _append_field(lines, "creators", article.get("creator"))
-    # Sentiment / AI signals.
-    _append_field(lines, "sentiment", article.get("sentiment"))
-    _append_field(lines, "sentiment_stats", _format_sentiment_stats(article.get("sentiment_stats")))
-    _append_field(lines, "ai_tags", article.get("ai_tag"))
-    _append_field(lines, "ai_regions", article.get("ai_region"))
-    _append_field(lines, "ai_orgs", article.get("ai_org"))
-    # Domain-specific.
-    _append_field(lines, "coins", article.get("coin"))
-    _append_field(lines, "symbols", article.get("symbol"))
-    _append_field(lines, "market_id", article.get("market_id"))
-    _append_field(lines, "datatype", article.get("datatype"))
-    # Media.
-    _append_field(lines, "image_url", article.get("image_url"))
-    _append_field(lines, "video_url", article.get("video_url"))
-    # Source details (source_name already up top).
-    _append_field(lines, "source_id", article.get("source_id"))
-    _append_field(lines, "source_url", article.get("source_url"))
-    _append_field(lines, "source_icon", article.get("source_icon"))
-    _append_field(lines, "source_priority", article.get("source_priority"))
-    # Temporal / internal metadata.
-    _append_field(lines, "published_timezone", article.get("pubDateTZ"))
-    _append_field(lines, "fetched_at", article.get("fetched_at"))
-    _append_field(lines, "duplicate", article.get("duplicate"))
-    # The article id comes last.
-    _append_field(lines, "article_id", article.get("article_id"))
-
-    return lines
 
 
 def format_registration(data: dict[str, Any]) -> str:
@@ -497,8 +421,8 @@ def format_registered_queries(data: dict[str, Any]) -> str:
     if data.get("status") != "success":
         return _format_error(data)
 
-    results = (data.get("data", {}) or {}).get("results") or {}
-    queries = results.get("queries") if isinstance(results, dict) else None
+    results = (data.get("data", {}) or {}).get("results")
+    queries = results if isinstance(results, list) else None
     if not queries:
         return "No real-time queries are registered on this account."
 
@@ -577,7 +501,7 @@ def format_stream(
     body: list[str] = []
     for index, article in enumerate(articles, 1):
         body.append(f"Article {index}:")
-        body.extend(_format_stream_article(article, not_in_plan, full_text))
+        body.extend(_format_article_item(article, not_in_plan, full_text))
         body.append("")
 
     texts = [article.get("content") for article in articles]

@@ -83,10 +83,13 @@ EXPECTED_PARAMETERS = {
     "get_crypto_counts": (CRYPTO - NOT_ON_COUNT) | {"interval"},
 }
 
-# The real-time (WebSocket) tools. They follow the real-time service, which has
-# its own parameter names, so they are not part of the per-endpoint table above.
+# The real-time (WebSocket) tools. They are not part of the per-endpoint table
+# above: `list_realtime_queries`, `delete_realtime_query` and `stream_news` have
+# no filters, and `register_realtime_query` sets `news_type` itself.
 REALTIME_TOOLS = {"register_realtime_query", "list_realtime_queries", "delete_realtime_query", "stream_news"}
 
+# The filters of the API's `websocket/register` endpoint (`FILTERS_MAPPING` in
+# its `env_file.py`), minus `apikey` and `news_type`.
 REGISTER_PARAMETERS = {
     "q",
     "q_in_title",
@@ -97,15 +100,14 @@ REGISTER_PARAMETERS = {
     "exclude_category",
     "language",
     "exclude_language",
-    "domain",
-    "domainurl",
-    "exclude_domain",
-    "priority_domain",
+    "source_url",
+    "exclude_source_url",
+    "source_priority",
     "timezone",
-    "full_content",
+    "content",
     "image",
     "video",
-    "removeduplicate",
+    "remove_duplicate",
     "tag",
     "sentiment",
     "sentiment_score",
@@ -113,7 +115,7 @@ REGISTER_PARAMETERS = {
     "organization",
     "creator",
     "datatype",
-    "excludefield",
+    "exclude_field",
 }
 
 # JSON Schema keywords the tool schemas are allowed to use. Anything else
@@ -345,15 +347,6 @@ async def test_realtime_register_keeps_its_parameter_names():
     assert tool.inputSchema.get("required", []) == []
     for name, schema in tool.inputSchema["properties"].items():
         assert isinstance(schema.get("description"), str), f"register_realtime_query.{name} has no description"
-
-
-async def test_realtime_exclude_domain_is_described_as_a_website():
-    """`exclude_domain` is named like `domain` but the API takes website
-    addresses for it: `bbc` is answered with 422, `bbc.com` is accepted."""
-    properties = (await _tools_by_name())["register_realtime_query"].inputSchema["properties"]
-    assert "`bbc.com`" in properties["exclude_domain"]["description"]
-    assert "source id, e.g. `bbc`" in properties["domain"]["description"]
-    assert "exclude_domain" not in properties["domain"]["description"]
 
 
 async def test_realtime_tools_that_need_an_id_require_it():

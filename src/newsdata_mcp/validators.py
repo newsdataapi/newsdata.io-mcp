@@ -52,8 +52,7 @@ def check_mutex_groups(
 
     `kwargs` is the mapping of the tool's arguments by name. Missing keys
     are treated as not set; unknown keys are ignored. `groups` defaults to
-    `MUTEX_GROUPS`; the real-time registration tool passes its own, because
-    its source filters have other names.
+    `MUTEX_GROUPS`.
 
     The returned string names the conflicting parameters in single-quoted
     form, lists the full group so the model knows its options, and ends

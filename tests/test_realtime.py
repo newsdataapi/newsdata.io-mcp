@@ -26,8 +26,8 @@ def article_frame(article_id: str, title: str) -> str:
     return json.dumps(
         {
             "status": "success",
-            "totalResults": 1,
-            "results": [{"article_id": article_id, "title": title}],
+            "total_results": 1,
+            "results": [{"id": article_id, "title": title}],
         }
     )
 
@@ -99,7 +99,7 @@ def api_key(monkeypatch):
     monkeypatch.setattr(realtime, "NEWSDATA_WS_URL", "wss://ws.example.test/ws/event")
     # Pinned so that a NEWSDATA_WS_API_URL in the shell or in `.env` cannot send a
     # test to an address that is not mocked.
-    monkeypatch.setattr(realtime, "NEWSDATA_WS_API_URL", "https://newsdata.io/api/1")
+    monkeypatch.setattr(realtime, "NEWSDATA_WS_API_URL", "https://newsdata.io/api/2")
 
 
 # ---- register -----------------------------------------------------------
@@ -107,7 +107,7 @@ def api_key(monkeypatch):
 
 @respx.mock
 async def test_register_posts_with_news_type():
-    route = respx.post("https://newsdata.io/api/1/websocket/register").mock(
+    route = respx.post("https://newsdata.io/api/2/websocket/register").mock(
         return_value=httpx.Response(
             200,
             json={"status": "success", "results": {"registration_id": "9b2d1e8a7c4f4b6e9d3a5c7e1f2a4b6c"}},
@@ -117,7 +117,7 @@ async def test_register_posts_with_news_type():
 
     assert route.called
     qs = dict(route.calls[0].request.url.params)
-    assert qs["news_type"] == "latest"
+    assert qs["news_type"] == "news"
     assert qs["q"] == "bitcoin"
     assert qs["language"] == "en"
     assert route.calls[0].request.method == "POST"
@@ -140,7 +140,7 @@ async def test_register_requires_sentiment_for_sentiment_score():
 
 @respx.mock
 async def test_register_surfaces_409_conflict():
-    respx.post("https://newsdata.io/api/1/websocket/register").mock(
+    respx.post("https://newsdata.io/api/2/websocket/register").mock(
         return_value=httpx.Response(
             409,
             json={"status": "error", "results": {"message": "already registered"}},
@@ -156,17 +156,16 @@ async def test_register_surfaces_409_conflict():
 
 @respx.mock
 async def test_list_renders_registered_queries():
-    respx.get("https://newsdata.io/api/1/websocket/fetch").mock(
+    respx.get("https://newsdata.io/api/2/websocket/fetch").mock(
         return_value=httpx.Response(
             200,
             json={
                 "status": "success",
-                "results": {
-                    "queries": [
-                        {"registration_id": "1111111122223333444455556666aaaa", "q": "bitcoin"},
-                        {"registration_id": "2222222233334444555566667777bbbb", "q": "ethereum"},
-                    ]
-                },
+                "total_results": 2,
+                "results": [
+                    {"registration_id": "1111111122223333444455556666aaaa", "query": {"q": "bitcoin"}},
+                    {"registration_id": "2222222233334444555566667777bbbb", "query": {"q": "ethereum"}},
+                ],
             },
         )
     )
@@ -178,9 +177,9 @@ async def test_list_renders_registered_queries():
 
 @respx.mock
 async def test_list_handles_no_registrations():
-    respx.get("https://newsdata.io/api/1/websocket/fetch").mock(
+    respx.get("https://newsdata.io/api/2/websocket/fetch").mock(
         return_value=httpx.Response(
-            200, json={"status": "success", "results": {"queries": []}}
+            200, json={"status": "success", "total_results": 0, "results": []}
         )
     )
     out = await list_realtime_queries()
@@ -192,7 +191,7 @@ async def test_list_handles_no_registrations():
 
 @respx.mock
 async def test_delete_uses_delete_method():
-    route = respx.delete("https://newsdata.io/api/1/websocket/delete").mock(
+    route = respx.delete("https://newsdata.io/api/2/websocket/delete").mock(
         return_value=httpx.Response(
             200, json={"status": "success", "results": {"deleted": True}}
         )
@@ -207,7 +206,7 @@ async def test_delete_uses_delete_method():
 
 @respx.mock
 async def test_delete_accepts_resultless_success():
-    respx.delete("https://newsdata.io/api/1/websocket/delete").mock(
+    respx.delete("https://newsdata.io/api/2/websocket/delete").mock(
         return_value=httpx.Response(200, json={"status": "success"})
     )
     out = await delete_realtime_query(registration_id="9b2d1e8a7c4f4b6e9d3a5c7e1f2a4b6c")
@@ -316,16 +315,16 @@ async def test_stream_requires_an_api_key(monkeypatch):
 
 @respx.mock
 async def test_management_calls_use_the_realtime_api_root_not_the_news_one(monkeypatch):
-    """The real-time service has its own API root. The news tools' root
-    (`NEWSDATA_BASE_URL`) must not be used for it."""
-    monkeypatch.setattr(realtime, "NEWSDATA_WS_API_URL", "https://rt.example.test/api/1")
-    register = respx.post("https://rt.example.test/api/1/websocket/register").mock(
+    """The real-time management calls go to `NEWSDATA_WS_API_URL`, which can
+    point somewhere other than the news tools' root (`NEWSDATA_BASE_URL`)."""
+    monkeypatch.setattr(realtime, "NEWSDATA_WS_API_URL", "https://rt.example.test/api/2")
+    register = respx.post("https://rt.example.test/api/2/websocket/register").mock(
         return_value=httpx.Response(200, json={"status": "success", "results": {"registration_id": "a" * 32}})
     )
-    listing = respx.get("https://rt.example.test/api/1/websocket/fetch").mock(
-        return_value=httpx.Response(200, json={"status": "success", "results": {"queries": []}})
+    listing = respx.get("https://rt.example.test/api/2/websocket/fetch").mock(
+        return_value=httpx.Response(200, json={"status": "success", "total_results": 0, "results": []})
     )
-    delete = respx.delete("https://rt.example.test/api/1/websocket/delete").mock(
+    delete = respx.delete("https://rt.example.test/api/2/websocket/delete").mock(
         return_value=httpx.Response(200, json={"status": "success"})
     )
 
@@ -339,49 +338,48 @@ async def test_management_calls_use_the_realtime_api_root_not_the_news_one(monke
 
 
 @respx.mock
-async def test_register_sends_the_realtime_parameter_names():
-    route = respx.post("https://newsdata.io/api/1/websocket/register").mock(
+async def test_register_sends_the_api_parameter_names():
+    route = respx.post("https://newsdata.io/api/2/websocket/register").mock(
         return_value=httpx.Response(200, json={"status": "success", "results": {"registration_id": "a" * 32}})
     )
     await register_realtime_query(
         q_in_title="apple",
         exclude_country="cn",
-        domainurl="bbc.com",
-        priority_domain="top",
-        full_content=True,
+        source_url="bbc.com",
+        source_priority="top",
+        content=True,
         image=False,
-        removeduplicate=True,
-        excludefield=["content", "ai_summary"],
+        remove_duplicate=True,
+        exclude_field=["content", "ai.summary"],
     )
     assert dict(route.calls[0].request.url.params) == {
-        "qInTitle": "apple",
-        "excludecountry": "cn",
-        "domainurl": "bbc.com",
-        "prioritydomain": "top",
-        "full_content": "1",
+        "q_in_title": "apple",
+        "exclude_country": "cn",
+        "source_url": "bbc.com",
+        "source_priority": "top",
+        "content": "1",
         "image": "0",
-        "removeduplicate": "1",
-        "excludefield": "content,ai_summary",
-        "news_type": "latest",
+        "remove_duplicate": "1",
+        "exclude_field": "content,ai.summary",
+        "news_type": "news",
     }
 
 
 @respx.mock
-async def test_register_removeduplicate_false_is_not_sent():
-    route = respx.post("https://newsdata.io/api/1/websocket/register").mock(
+async def test_register_remove_duplicate_false_is_not_sent():
+    route = respx.post("https://newsdata.io/api/2/websocket/register").mock(
         return_value=httpx.Response(200, json={"status": "success", "results": {"registration_id": "a" * 32}})
     )
-    await register_realtime_query(q="bitcoin", removeduplicate=False)
-    assert dict(route.calls[0].request.url.params) == {"q": "bitcoin", "news_type": "latest"}
+    await register_realtime_query(q="bitcoin", remove_duplicate=False)
+    assert dict(route.calls[0].request.url.params) == {"q": "bitcoin", "news_type": "news"}
 
 
 @respx.mock
 async def test_register_rejects_conflicting_source_filters():
-    out = await register_realtime_query(domain="bbc", domainurl="bbc.com")
+    out = await register_realtime_query(source_url="bbc.com", exclude_source_url="cnn.com")
     assert out.startswith("Error:")
-    assert "'domain'" in out
-    assert "'domainurl'" in out
-    assert "'exclude_domain'" in out  # the whole group is listed
+    assert "'source_url'" in out
+    assert "'exclude_source_url'" in out
     assert not respx.calls
 
 
@@ -389,7 +387,7 @@ async def test_register_rejects_conflicting_source_filters():
 async def test_register_conflict_shows_the_existing_registration_id():
     """The API answers a duplicate registration with 409 and the id of the
     registration that already exists; the model needs that id."""
-    respx.post("https://newsdata.io/api/1/websocket/register").mock(
+    respx.post("https://newsdata.io/api/2/websocket/register").mock(
         return_value=httpx.Response(
             409,
             json={
@@ -409,17 +407,18 @@ async def test_register_conflict_shows_the_existing_registration_id():
     ]
 
 
-async def test_stream_renders_the_stream_article_layout(monkeypatch):
+async def test_stream_renders_articles_like_the_news_tools(monkeypatch):
     frame = json.dumps(
         {
             "status": "success",
+            "total_results": 1,
             "results": [
                 {
-                    "article_id": "a1",
+                    "id": "a1",
                     "title": "one",
-                    "link": "https://example.com/one",
-                    "pubDate": "2026-11-16 06:15:00",
-                    "source_name": "Example News",
+                    "url": "https://example.com/one",
+                    "published_at": "2026-11-16T06:15:00Z",
+                    "source": {"name": "Example News"},
                 }
             ],
         }
@@ -429,9 +428,9 @@ async def test_stream_renders_the_stream_article_layout(monkeypatch):
     out = await stream_news(registration_id="1111111122223333444455556666aaaa", max_articles=1, wait_seconds=5)
 
     assert "url: https://example.com/one" in out
-    assert "published_at: 2026-11-16 06:15:00" in out
-    assert "source_name: Example News" in out
-    assert "article_id: a1" in out
+    assert "published_at: 2026-11-16T06:15:00Z" in out
+    assert "source.name: Example News" in out
+    assert "id: a1" in out
 
 
 # ---- the key on the list and delete endpoints ----------------------------
@@ -439,12 +438,11 @@ async def test_stream_renders_the_stream_article_layout(monkeypatch):
 
 @respx.mock
 async def test_list_and_delete_send_the_key_as_a_query_parameter():
-    """These two endpoints read the key only from `apikey` in the query
-    string; the header alone is answered with 401."""
-    listing = respx.get("https://newsdata.io/api/1/websocket/fetch").mock(
-        return_value=httpx.Response(200, json={"status": "success", "results": {"queries": []}})
+    """These two calls send the key as `apikey` in the query string."""
+    listing = respx.get("https://newsdata.io/api/2/websocket/fetch").mock(
+        return_value=httpx.Response(200, json={"status": "success", "total_results": 0, "results": []})
     )
-    delete = respx.delete("https://newsdata.io/api/1/websocket/delete").mock(
+    delete = respx.delete("https://newsdata.io/api/2/websocket/delete").mock(
         return_value=httpx.Response(200, json={"status": "success"})
     )
 
@@ -458,7 +456,7 @@ async def test_list_and_delete_send_the_key_as_a_query_parameter():
 @respx.mock
 async def test_register_keeps_the_key_out_of_the_query_string():
     """Registration accepts the header, so the key stays out of the URL there."""
-    route = respx.post("https://newsdata.io/api/1/websocket/register").mock(
+    route = respx.post("https://newsdata.io/api/2/websocket/register").mock(
         return_value=httpx.Response(200, json={"status": "success", "results": {"registration_id": "a" * 32}})
     )
     await register_realtime_query(q="bitcoin")
@@ -469,8 +467,8 @@ async def test_register_keeps_the_key_out_of_the_query_string():
 async def test_the_key_in_a_request_url_is_not_written_to_the_log(caplog):
     """httpx logs every request URL at INFO level. The list and delete calls
     carry the key in the URL, so it has to be masked in that log line."""
-    respx.get("https://newsdata.io/api/1/websocket/fetch").mock(
-        return_value=httpx.Response(200, json={"status": "success", "results": {"queries": []}})
+    respx.get("https://newsdata.io/api/2/websocket/fetch").mock(
+        return_value=httpx.Response(200, json={"status": "success", "total_results": 0, "results": []})
     )
     with caplog.at_level("INFO", logger="httpx"):
         await list_realtime_queries()
@@ -485,7 +483,7 @@ async def test_a_full_registration_list_is_reported_at_once(monkeypatch):
     """`RegistrationLimitExceeded` comes as a 429, but waiting does not free a
     registration, so it must not go through the retry loop."""
     monkeypatch.setattr("newsdata_mcp.http.RETRY_BACKOFF", 30.0)  # a retry would hang the test
-    route = respx.post("https://newsdata.io/api/1/websocket/register").mock(
+    route = respx.post("https://newsdata.io/api/2/websocket/register").mock(
         return_value=httpx.Response(
             429,
             json={
@@ -605,22 +603,26 @@ async def test_stream_accepts_deliveries_of_any_size(monkeypatch):
 
 
 async def test_stream_shows_the_ai_summary_and_lists_plan_notices_once(monkeypatch):
-    paid = {"article_id": "a1", "title": "one", "ai_summary": "A short summary.", "content": "Full text."}
+    paid = {"id": "a1", "title": "one", "ai": {"summary": "A short summary."}, "content": "Full text."}
     free = {
-        "article_id": "a2",
+        "id": "a2",
         "title": "two",
         "content": "ONLY AVAILABLE IN PAID PLANS",
-        "ai_tag": "ONLY AVAILABLE IN PROFESSIONAL AND CORPORATE PLANS",
-        "ai_summary": "ONLY AVAILABLE IN PAID PLANS",
+        "ai": {
+            "summary": "ONLY AVAILABLE IN PAID PLANS",
+            "tag": "ONLY AVAILABLE IN PROFESSIONAL AND CORPORATE PLANS",
+        },
     }
-    frame = json.dumps({"status": "success", "totalResults": 3, "results": [paid, free, free]})
+    frame = json.dumps({"status": "success", "total_results": 3, "results": [paid, free, free]})
     monkeypatch.setattr(realtime.ws_client, "connect", FakeConnect(FakeWebSocket([frame])))
 
-    out = await stream_news(registration_id="1111111122223333444455556666aaaa", max_articles=3, wait_seconds=5)
+    out = await stream_news(
+        registration_id="1111111122223333444455556666aaaa", max_articles=3, wait_seconds=5, content=True
+    )
 
-    assert "ai_summary: A short summary." in out
+    assert "ai.summary: A short summary." in out
     assert out.count("ONLY AVAILABLE IN") == 0
-    assert out.count("not_in_your_plan: content, ai_tag, ai_summary") == 1
+    assert out.count("not_in_your_plan: ai.summary, content, ai.tag") == 1
 
 
 # ---- full text is left out of a stream unless asked for -------------------
@@ -632,10 +634,10 @@ def text_frame() -> str:
     return json.dumps(
         {
             "status": "success",
-            "totalResults": 2,
+            "total_results": 2,
             "results": [
-                {"article_id": "a1", "title": "one", "ai_summary": "Summary one.", "content": LONG_TEXT},
-                {"article_id": "a2", "title": "two", "ai_summary": "Summary two.", "content": LONG_TEXT},
+                {"id": "a1", "title": "one", "ai": {"summary": "Summary one."}, "content": LONG_TEXT},
+                {"id": "a2", "title": "two", "ai": {"summary": "Summary two."}, "content": LONG_TEXT},
             ],
         }
     )
@@ -650,10 +652,10 @@ async def test_stream_leaves_the_full_text_out_by_default(monkeypatch):
 
     assert "content:" not in out
     assert "Full text of the article." not in out
-    assert "ai_summary: Summary one." in out, "the summary stays"
+    assert "ai.summary: Summary one." in out, "the summary stays"
     assert out.count("full_text: left out of this result.") == 1
     assert "content=true" in out
-    assert "get_news with id=<its article_id>" in out
+    assert "get_news with id=<its id>" in out
 
 
 async def test_stream_includes_the_full_text_when_asked(monkeypatch):
@@ -668,7 +670,7 @@ async def test_stream_includes_the_full_text_when_asked(monkeypatch):
 
 
 async def test_stream_gives_no_full_text_hint_when_there_was_no_text_to_leave_out(monkeypatch):
-    """A registration made with `full_content=false` or `excludefield=content`
+    """A registration made with `content=false` or `exclude_field=content`
     delivers no text, so there is nothing to offer."""
     monkeypatch.setattr(realtime.ws_client, "connect", FakeConnect(FakeWebSocket([article_frame("a1", "one")])))
 

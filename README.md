@@ -75,7 +75,7 @@ cp .env.example .env
 | `NEWSDATA_MAX_RETRIES` | `5` | Maximum attempts for transient failures (network, 5xx, 429). |
 | `NEWSDATA_RETRY_BACKOFF` | `2.0` | Base for exponential backoff (`base * 2^(attempt-1)`). Seconds. |
 | `NEWSDATA_RETRY_BACKOFF_MAX` | `60.0` | Cap on a single retry sleep, seconds. When the API asks for a longer wait (`Retry-After`), the error is returned at once instead of waiting. |
-| `NEWSDATA_WS_API_URL` | `https://newsdata.io/api/1` | API root of the real-time registration endpoints (`register_realtime_query`, `list_realtime_queries`, `delete_realtime_query`). |
+| `NEWSDATA_WS_API_URL` | `https://newsdata.io/api/2` | API root of the real-time registration endpoints (`register_realtime_query`, `list_realtime_queries`, `delete_realtime_query`). Set it on its own to send them somewhere other than `NEWSDATA_BASE_URL`. |
 | `NEWSDATA_WS_URL` | `wss://ws.newsdata.io/ws/event` | Real-time endpoint used by `stream_news`. |
 | `NEWSDATA_WS_MAX_WAIT` | `120` | Ceiling on `stream_news`'s `wait_seconds`, in seconds. |
 | `NEWSDATA_INTEGRATION_KEY` | _(unset)_ | Used only by `pytest -m integration`. Without it, live-API tests skip. |
@@ -171,9 +171,9 @@ A server on your own machine is not public, so connect it through OpenAI's [Secu
 | `get_news_counts` | `/api/2/count/news` | How many news articles match: a total plus counts per `month` / `day` / `hour` |
 | `get_crypto_counts` | `/api/2/count/crypto` | The same for crypto news |
 | `get_market_counts` | `/api/2/count/market` | The same for market news |
-| `register_realtime_query` | `/api/1/websocket/register` | Register a standing real-time query, returns a `registration_id` |
-| `list_realtime_queries` | `/api/1/websocket/fetch` | List the account's registered real-time queries |
-| `delete_realtime_query` | `/api/1/websocket/delete` | Delete a registered real-time query |
+| `register_realtime_query` | `/api/2/websocket/register` | Register a standing real-time query, returns a `registration_id` |
+| `list_realtime_queries` | `/api/2/websocket/fetch` | List the account's registered real-time queries |
+| `delete_realtime_query` | `/api/2/websocket/delete` | Delete a registered real-time query |
 | `stream_news` | `wss://ws.newsdata.io/ws/event` | Collect real-time articles for a registered query ([below](#real-time-news-websocket)) |
 
 The seven news, source and count tools are read-only and idempotent. `register_realtime_query` and `delete_realtime_query` are annotated as mutating (the latter destructive), since they create and remove server-side state.
@@ -207,10 +207,10 @@ or paging filters** — a registered query matches news as it is published.
 Registering identical filters twice answers `Error (HTTP 409, Conflict)` with
 the existing `registration_id`; `list_realtime_queries` shows every registration.
 
-A few of its parameters are named differently from the news tools: `domain`
-(source ids such as `bbc`), `domainurl` and `exclude_domain` (website addresses
-such as `bbc.com`), `priority_domain`, `full_content`, `removeduplicate` and
-`excludefield`.
+Its parameters have the same names as on the news tools (`source_url`,
+`exclude_source_url`, `source_priority`, `content`, `remove_duplicate`,
+`exclude_field`, …), and a streamed article has the same fields as a
+`get_news` result.
 
 Streamed articles come **without their full text** by default. Pass
 `content=true` to `stream_news` to include it.
