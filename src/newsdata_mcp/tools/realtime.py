@@ -13,9 +13,10 @@ import json
 import logging
 import time
 from typing import Any
+from urllib.parse import urlencode
 
 from websockets.asyncio import client as ws_client
-from websockets.exceptions import ConnectionClosed, InvalidStatus
+from websockets.exceptions import ConnectionClosed, InvalidStatus, WebSocketException
 from websockets.frames import Close
 
 from .._mcp import CREATE_TOOL, DESTRUCTIVE_TOOL, READ_ONLY_TOOL, mcp
@@ -252,10 +253,11 @@ async def stream_news(
     max_articles = max(1, min(int(max_articles), WS_MAX_ARTICLES))
     wait_seconds = max(1.0, min(float(wait_seconds), WS_MAX_WAIT_SECONDS))
 
-    url = (
-        f"{NEWSDATA_WS_URL}?apikey={NEWSDATA_API_KEY}"
-        f"&registration_id={registration_id}"
-    )
+    # Encoded, so that a `#` or `&` in `registration_id` stays part of the
+    # value. Pasted in raw, a `#` starts a fragment, which the WebSocket library
+    # refuses with an error whose text is the whole URL, API key included.
+    query = urlencode({"apikey": NEWSDATA_API_KEY, "registration_id": registration_id})
+    url = f"{NEWSDATA_WS_URL}?{query}"
 
     articles: list[dict[str, Any]] = []
     # Why the service refused or ended the stream, when it did: the error
@@ -315,6 +317,16 @@ async def stream_news(
         stopped_because = "connection_closed"
         if error is None and exc.rcvd_then_sent is not False:
             error = _close_error(exc.rcvd)
+    except WebSocketException as exc:
+        # Any other error of the WebSocket library, such as a URL it refuses or
+        # a malformed answer to the handshake. Its text can contain the request
+        # URL, which holds the API key, so only the error's name is shown and
+        # logged.
+        name = type(exc).__name__
+        logger.warning("real-time connection failed: %s", name)
+        if not articles:
+            return f"Error: could not open the real-time connection ({name})."
+        stopped_because = "connection_closed"
     except OSError as exc:
         logger.warning("real-time connection failed: %s", exc)
         if not articles:

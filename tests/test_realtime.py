@@ -6,12 +6,14 @@ streaming tool is exercised against a fake `connect()` so no live socket
 """
 import json
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
 import respx
-from websockets.exceptions import ConnectionClosedError
+from websockets.exceptions import ConnectionClosedError, InvalidURI
 from websockets.frames import Close
+from websockets.uri import parse_uri
 
 from newsdata_mcp.tools import realtime
 from newsdata_mcp.tools.realtime import (
@@ -240,6 +242,34 @@ async def test_stream_sends_apikey_and_registration_id(monkeypatch):
 
     assert "apikey=test-key" in fake.url
     assert "registration_id=42424242333344445555666677778888" in fake.url
+
+
+async def test_stream_url_keeps_url_characters_in_the_registration_id(monkeypatch):
+    """A `#` or `&` in `registration_id` must stay part of the value. Pasted in
+    raw, a `#` starts a fragment, which the WebSocket library refuses with an
+    error whose text is the whole URL, API key included."""
+    fake = FakeConnect(FakeWebSocket([article_frame("a1", "one")]))
+    monkeypatch.setattr(realtime.ws_client, "connect", fake)
+    registration_id = "a" * 29 + "#&b"  # 32 characters, like a real id
+
+    await stream_news(registration_id=registration_id, max_articles=1, wait_seconds=5)
+
+    parse_uri(fake.url)  # raises InvalidURI for a URL the library refuses
+    assert parse_qs(urlsplit(fake.url).query) == {"apikey": ["test-key"], "registration_id": [registration_id]}
+
+
+async def test_stream_library_errors_do_not_show_the_url_or_the_key(monkeypatch, caplog):
+    """Errors of the WebSocket library can carry the request URL in their
+    text, and that URL holds the API key: only the error's name is shown."""
+    url = "wss://ws.example.test/ws/event?apikey=test-key&registration_id=x#y"
+    error = InvalidURI(url, "fragment identifier is meaningless")
+    monkeypatch.setattr(realtime.ws_client, "connect", FakeConnect(error=error))
+
+    with caplog.at_level("WARNING", logger="newsdata_mcp.tools.realtime"):
+        out = await stream_news(registration_id="1111111122223333444455556666aaaa", max_articles=1, wait_seconds=5)
+
+    assert out == "Error: could not open the real-time connection (InvalidURI)."
+    assert not any("test-key" in record.getMessage() for record in caplog.records)
 
 
 async def test_stream_skips_malformed_frames(monkeypatch):
