@@ -16,15 +16,19 @@ in that shape (a proxy's HTML page, an empty body).
 
 Retry policy:
 
-- Network errors (``TimeoutException``, ``ConnectError``) → retry with
-  exponential backoff.
+- Network errors → retry with exponential backoff: a timeout
+  (``TimeoutException``), or a connection that could not be opened or
+  broke while the request or the response was in transit
+  (``NetworkError``, ``RemoteProtocolError``). Setup errors are permanent:
+  an illegal header value (``LocalProtocolError``), a proxy that refuses
+  (``ProxyError``), a URL scheme httpx cannot send (``UnsupportedProtocol``).
 - HTTP 5xx → retry with exponential backoff.
-- HTTP 429 ``RateLimitExceeded`` / ``TooManyRequests`` → retry, honoring
-  ``Retry-After`` (integer seconds or HTTP-date per RFC 7231) when
-  parseable; falling back to exponential backoff otherwise. A
-  ``Retry-After`` longer than ``NEWSDATA_RETRY_BACKOFF_MAX`` is not
-  waited out: the error is returned at once with the wait in it, because
-  a tool call that sleeps for minutes looks dead to the model.
+- HTTP 429 ``RateLimitExceeded`` / ``TooManyRequests`` → retry after
+  waiting ``Retry-After`` plus one second (integer seconds or HTTP-date
+  per RFC 7231) when parseable; falling back to exponential backoff
+  otherwise. A ``Retry-After`` longer than ``NEWSDATA_RETRY_BACKOFF_MAX``
+  is not waited out: the error is returned at once with the wait in it,
+  because a tool call that sleeps for minutes looks dead to the model.
 - HTTP 429 ``ApiLimitExceeded`` / ``ApiKeyLimitExceeded`` (credits used
   up) and ``RegistrationLimitExceeded`` (no real-time registration left
   on the plan) → permanent failure: waiting a few seconds changes
@@ -333,6 +337,25 @@ async def _request_once(
             },
             True,
         )
+    except (httpx.NetworkError, httpx.RemoteProtocolError):
+        # The connection broke while the request or the response was in
+        # transit: a reset, or a server that closed a kept-alive connection just
+        # as the request went out ("Server disconnected without sending a
+        # response"). That is as transient as a timeout. `ConnectError` is a
+        # `NetworkError` too and is caught above. Setup errors
+        # (`LocalProtocolError`, `ProxyError`, `UnsupportedProtocol`) are left
+        # to the generic handler below: a retry cannot fix them.
+        return (
+            {
+                "status": "error",
+                "message": (
+                    "The connection to Newsdata.io API was interrupted "
+                    "before the response arrived."
+                ),
+                "status_code": None,
+            },
+            True,
+        )
     except httpx.HTTPStatusError as e:
         code = e.response.status_code
         try:
@@ -400,8 +423,8 @@ async def fetch(
     Permanent failures (auth, validation, used-up credits, soft errors,
     JSON decode, unexpected exceptions) return immediately. Transient
     failures (network, 5xx, rate-limit 429) retry up to ``MAX_RETRIES``
-    times with exponential backoff (honoring ``Retry-After`` for 429 when
-    parseable). A 429 whose ``Retry-After`` is longer than
+    times with exponential backoff (waiting ``Retry-After`` plus one second
+    for a 429 when parseable). A 429 whose ``Retry-After`` is longer than
     ``RETRY_BACKOFF_MAX`` is returned at once instead of waited out.
     """
     if not NEWSDATA_API_KEY:
@@ -434,8 +457,12 @@ async def fetch(
             # Sleeping would leave the model with no answer at all, so the
             # error goes back now, with the wait in it.
             return envelope
+        # Retry-After is in whole seconds, and the API's value can fall short of
+        # the moment its rate-limit window resets (it is 0 in the window's last
+        # moments). One second more keeps the retry from arriving just before the
+        # reset, where it would get another 429 and use up an attempt.
         sleep_for = (
-            float(retry_after)
+            float(retry_after) + 1
             if retry_after is not None
             else _compute_backoff(attempt)
         )

@@ -5,6 +5,7 @@ Mocks the network with `respx` so no real NewsData calls are made.
 from datetime import UTC
 
 import httpx
+import pytest
 import respx
 
 from newsdata_mcp import http
@@ -447,6 +448,28 @@ async def test_retry_recovers_after_connect_error_then_200():
     assert route.call_count == 2
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        httpx.ReadError("[Errno 104] Connection reset by peer"),
+        httpx.WriteError("[Errno 32] Broken pipe"),
+        httpx.RemoteProtocolError("Server disconnected without sending a response."),
+    ],
+    ids=lambda error: type(error).__name__,
+)
+@respx.mock
+async def test_retry_recovers_after_the_connection_broke_then_200(error):
+    """A connection that breaks while the request or the response is in
+    transit (a reset, a kept-alive connection the server closed just as the
+    request went out) is as transient as a timeout."""
+    route = respx.get("https://newsdata.io/api/2/news").mock(
+        side_effect=[error, httpx.Response(200, json={"status": "success", "results": []})]
+    )
+    result = await http.fetch("news", {})
+    assert result["status"] == "success"
+    assert route.call_count == 2
+
+
 # Retry loop — exhaustion
 
 @respx.mock
@@ -460,6 +483,18 @@ async def test_retry_exhausted_on_5xx_returns_last_error(monkeypatch):
     assert result["status"] == "error"
     assert result["status_code"] == 503
     assert "HTTP 503" in result["message"]
+
+
+@respx.mock
+async def test_a_connection_that_keeps_breaking_is_reported_after_the_retries():
+    route = respx.get("https://newsdata.io/api/2/news").mock(
+        side_effect=httpx.ReadError("[Errno 104] Connection reset by peer")
+    )
+    result = await http.fetch("news", {})
+    assert result["status"] == "error"
+    assert result["status_code"] is None
+    assert result["message"] == "The connection to Newsdata.io API was interrupted before the response arrived."
+    assert route.call_count == http.MAX_RETRIES
 
 
 # Retry loop — never retry on permanent failures
@@ -527,11 +562,38 @@ async def test_soft_error_200_no_retry():
     assert route.call_count == 1
 
 
+@pytest.mark.parametrize(
+    "error",
+    [
+        httpx.LocalProtocolError("Illegal header value b'test_key_not_real\\n'"),
+        httpx.ProxyError("Proxy refused the connection."),
+        httpx.UnsupportedProtocol("Request URL has an unsupported protocol 'ftp://'."),
+    ],
+    ids=lambda error: type(error).__name__,
+)
+@respx.mock
+async def test_setup_errors_are_not_retried(error):
+    """An illegal header value (a key with a stray newline), a proxy that
+    refuses or a URL scheme httpx cannot send fails the same way every time.
+    The exception text stays out of the answer: h11 quotes an illegal header
+    value in it, and the header that can be illegal is the key."""
+    route = respx.get("https://newsdata.io/api/2/news").mock(side_effect=error)
+    result = await http.fetch("news", {})
+    assert result["status"] == "error"
+    assert result["message"].startswith("Unexpected error calling Newsdata.io.")
+    assert str(error) not in result["message"]
+    assert route.call_count == 1
+
+
 # Retry loop — 429 honoring Retry-After
 
 @respx.mock
-async def test_429_with_retry_after_integer_honored():
-    """429 first, then 200. Retry-After=0 lets the test fly past the sleep."""
+async def test_429_with_retry_after_integer_honored(monkeypatch):
+    """429 first, then 200. The wait is Retry-After plus one second, so even
+    `Retry-After: 0` waits a second: the API's value can fall short of the
+    moment its rate-limit window resets, and a retry sent at once can land
+    just before it."""
+    slept = _record_sleeps(monkeypatch)
     route = respx.get("https://newsdata.io/api/2/news").mock(
         side_effect=[
             httpx.Response(429, headers={"Retry-After": "0"}, text="too many"),
@@ -541,6 +603,7 @@ async def test_429_with_retry_after_integer_honored():
     result = await http.fetch("news", {})
     assert result["status"] == "success"
     assert route.call_count == 2
+    assert 1.0 in slept
 
 
 @respx.mock
@@ -839,7 +902,7 @@ async def test_429_with_short_retry_after_is_waited_and_retried(monkeypatch):
     result = await http.fetch("news", {})
     assert result["status"] == "success"
     assert route.call_count == 2
-    assert 5.0 in slept
+    assert 6.0 in slept  # Retry-After plus one second
 
 
 @respx.mock
@@ -855,4 +918,4 @@ async def test_429_retry_after_equal_to_the_cap_is_still_waited(monkeypatch):
     result = await http.fetch("news", {})
     assert result["status"] == "success"
     assert route.call_count == 2
-    assert 60.0 in slept
+    assert 61.0 in slept  # Retry-After plus one second

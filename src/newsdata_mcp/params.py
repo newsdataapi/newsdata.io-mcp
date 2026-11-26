@@ -468,7 +468,9 @@ REALTIME_FLAG = Annotated[
     Field(
         description=(
             "`true`: only articles that have this (`image`: an image, `video`: a video, "
-            "`content`: full text; `content` needs a paid plan). `false` does not filter."
+            "`content`: full text; `content` needs a paid plan). `false`: no filtering, but its field "
+            "(`media.image_url`, `media.video_url`, `content`) is left out of every article the "
+            "registration delivers."
         ),
     ),
 ]
